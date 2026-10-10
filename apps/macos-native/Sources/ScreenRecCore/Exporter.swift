@@ -1,31 +1,25 @@
 import AVFoundation
 import CoreMedia
 
-public struct ExportJob {
-    public struct Stream {
-        public var url: URL
-        /// Seconds from the shared recording clock origin to this stream's first sample.
-        public var offset: Double
-        public init(url: URL, offset: Double) { self.url = url; self.offset = offset }
-    }
-
-    public var video: Stream
-    public var audio: [Stream]
+public struct ExportRequest {
+    public var session: EditorSession
+    public var edit: EditState
     public var outputURL: URL
-    public var width: Int
+    /// Canvas height in pixels (720, 1080, 1440, 2160…); width follows the aspect ratio.
     public var height: Int
     public var fps: Int
-    /// nil = derive from pixel count (~0.1 bit per pixel per frame, 4 Mbps floor).
+    /// nil = derived from pixel count (~0.1 bit/pixel/frame, 4 Mbps floor).
     public var videoBitrate: Int?
+    public var codec: AVVideoCodecType
 
-    public init(video: Stream, audio: [Stream], outputURL: URL, width: Int = 1920, height: Int = 1080, fps: Int = 30, videoBitrate: Int? = nil) {
-        self.video = video; self.audio = audio; self.outputURL = outputURL
-        self.width = width; self.height = height; self.fps = fps; self.videoBitrate = videoBitrate
+    public init(session: EditorSession, edit: EditState, outputURL: URL, height: Int = 1080, fps: Int = 30,
+                videoBitrate: Int? = nil, codec: AVVideoCodecType = .h264) {
+        self.session = session; self.edit = edit; self.outputURL = outputURL
+        self.height = height; self.fps = fps; self.videoBitrate = videoBitrate; self.codec = codec
     }
 }
 
 public enum ExportError: Error, LocalizedError {
-    case noVideoTrack
     case invalidDimensions
     case readerFailed(String)
     case writerFailed(String)
@@ -33,8 +27,7 @@ public enum ExportError: Error, LocalizedError {
 
     public var errorDescription: String? {
         switch self {
-        case .noVideoTrack: return "The screen recording contains no video track."
-        case .invalidDimensions: return "Export dimensions must be positive and even."
+        case .invalidDimensions: return "Export dimensions must be positive."
         case .readerFailed(let m): return "Reading source media failed: \(m)"
         case .writerFailed(let m): return "Writing the export failed: \(m)"
         case .cancelled: return "Export cancelled."
@@ -42,63 +35,24 @@ public enum ExportError: Error, LocalizedError {
     }
 }
 
-/// Phase 0 exporter: AVMutableComposition (aligns streams) -> reader -> H.264/AAC MP4.
-/// Writes to a hidden temp file and moves into place on success, so a failed or cancelled export never leaves a corrupt file.
+/// Renders the trimmed timeline through the same compositor as the preview, then encodes H.264/HEVC + AAC.
+/// Output goes to a hidden temp file and is moved into place on success, so failures never leave a corrupt file.
 public final class Exporter: @unchecked Sendable {
     public init() {}
 
     private let stateLock = NSLock()
     private var cancelFlag = false
     private var isCancelled: Bool { stateLock.lock(); defer { stateLock.unlock() }; return cancelFlag }
-
     public func cancel() { stateLock.lock(); cancelFlag = true; stateLock.unlock() }
 
-    public func export(_ job: ExportJob, progress: @escaping @Sendable (Double) -> Void) async throws {
-        guard job.width > 0, job.height > 0, job.width % 2 == 0, job.height % 2 == 0 else { throw ExportError.invalidDimensions }
+    public func export(_ job: ExportRequest, progress: @escaping @Sendable (Double) -> Void) async throws {
+        guard job.height >= 2, job.fps > 0 else { throw ExportError.invalidDimensions }
+        let session = job.session
+        let timeline = try session.makeTimeline(trimStart: job.edit.trimStart, trimEnd: job.edit.trimEnd)
+        let videoComposition = session.videoComposition(for: timeline, edit: job.edit, outputHeight: job.height, fps: job.fps)
+        let size = videoComposition.renderSize
+        let composition = timeline.composition
 
-        // ---- Build composition -------------------------------------------------
-        let composition = AVMutableComposition()
-        let origin = min(job.video.offset, job.audio.map(\.offset).min() ?? job.video.offset)
-
-        let vAsset = AVURLAsset(url: job.video.url)
-        guard let vTrack = try await vAsset.loadTracks(withMediaType: .video).first else { throw ExportError.noVideoTrack }
-        let vDuration = try await vAsset.load(.duration)
-        let naturalSize = try await vTrack.load(.naturalSize)
-        guard let compVideo = composition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid) else {
-            throw ExportError.readerFailed("could not create composition video track")
-        }
-        let vStart = CMTime(seconds: job.video.offset - origin, preferredTimescale: 60000)
-        try compVideo.insertTimeRange(CMTimeRange(start: .zero, duration: vDuration), of: vTrack, at: vStart)
-
-        for stream in job.audio {
-            let aAsset = AVURLAsset(url: stream.url)
-            guard let aTrack = try await aAsset.loadTracks(withMediaType: .audio).first else { continue }
-            let aDuration = try await aAsset.load(.duration)
-            guard let compAudio = composition.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid) else { continue }
-            let at = CMTime(seconds: stream.offset - origin, preferredTimescale: 60000)
-            try compAudio.insertTimeRange(CMTimeRange(start: .zero, duration: aDuration), of: aTrack, at: at)
-        }
-
-        let totalDuration = composition.duration
-
-        // ---- Video composition: aspect-fit into the output canvas --------------
-        let renderSize = CGSize(width: job.width, height: job.height)
-        let fit = min(renderSize.width / naturalSize.width, renderSize.height / naturalSize.height)
-        let scaled = CGSize(width: naturalSize.width * fit, height: naturalSize.height * fit)
-        let transform = CGAffineTransform(scaleX: fit, y: fit)
-            .concatenating(CGAffineTransform(translationX: (renderSize.width - scaled.width) / 2,
-                                             y: (renderSize.height - scaled.height) / 2))
-        let layer = AVMutableVideoCompositionLayerInstruction(assetTrack: compVideo)
-        layer.setTransform(transform, at: .zero)
-        let instruction = AVMutableVideoCompositionInstruction()
-        instruction.timeRange = CMTimeRange(start: .zero, duration: totalDuration)
-        instruction.layerInstructions = [layer]
-        let videoComposition = AVMutableVideoComposition()
-        videoComposition.renderSize = renderSize
-        videoComposition.frameDuration = CMTime(value: 1, timescale: CMTimeScale(job.fps))
-        videoComposition.instructions = [instruction]
-
-        // ---- Reader ------------------------------------------------------------
         let reader = try AVAssetReader(asset: composition)
         let videoOut = AVAssetReaderVideoCompositionOutput(
             videoTracks: composition.tracks(withMediaType: .video),
@@ -110,31 +64,25 @@ public final class Exporter: @unchecked Sendable {
         var audioOut: AVAssetReaderAudioMixOutput?
         if !audioTracks.isEmpty {
             let out = AVAssetReaderAudioMixOutput(audioTracks: audioTracks, audioSettings: [
-                AVFormatIDKey: kAudioFormatLinearPCM,
-                AVSampleRateKey: 48000,
-                AVNumberOfChannelsKey: 2,
-                AVLinearPCMBitDepthKey: 16,
-                AVLinearPCMIsFloatKey: false,
-                AVLinearPCMIsBigEndianKey: false,
-                AVLinearPCMIsNonInterleaved: false,
+                AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: 48000, AVNumberOfChannelsKey: 2,
+                AVLinearPCMBitDepthKey: 16, AVLinearPCMIsFloatKey: false,
+                AVLinearPCMIsBigEndianKey: false, AVLinearPCMIsNonInterleaved: false,
             ])
+            out.audioMix = session.audioMix(for: timeline, edit: job.edit)
             reader.add(out)
             audioOut = out
         }
 
-        // ---- Writer ------------------------------------------------------------
         let fm = FileManager.default
-        let tempURL = job.outputURL.deletingLastPathComponent()
-            .appendingPathComponent(".\(UUID().uuidString).partial.mp4")
+        let tempURL = job.outputURL.deletingLastPathComponent().appendingPathComponent(".\(UUID().uuidString).partial.mp4")
         let writer = try AVAssetWriter(outputURL: tempURL, fileType: .mp4)
-        let bitrate = job.videoBitrate ?? max(4_000_000, Int(Double(job.width * job.height * job.fps) * 0.1))
+        let bitrate = job.videoBitrate ?? max(4_000_000, Int(Double(Int(size.width) * Int(size.height) * job.fps) * 0.1))
         let vInput = AVAssetWriterInput(mediaType: .video, outputSettings: [
-            AVVideoCodecKey: AVVideoCodecType.h264,
-            AVVideoWidthKey: job.width,
-            AVVideoHeightKey: job.height,
+            AVVideoCodecKey: job.codec,
+            AVVideoWidthKey: Int(size.width),
+            AVVideoHeightKey: Int(size.height),
             AVVideoCompressionPropertiesKey: [
                 AVVideoAverageBitRateKey: bitrate,
-                AVVideoProfileLevelKey: AVVideoProfileLevelH264HighAutoLevel,
                 AVVideoExpectedSourceFrameRateKey: job.fps,
                 AVVideoMaxKeyFrameIntervalKey: job.fps * 2,
             ],
@@ -144,56 +92,36 @@ public final class Exporter: @unchecked Sendable {
         var aInput: AVAssetWriterInput?
         if audioOut != nil {
             let input = AVAssetWriterInput(mediaType: .audio, outputSettings: [
-                AVFormatIDKey: kAudioFormatMPEG4AAC,
-                AVSampleRateKey: 48000,
-                AVNumberOfChannelsKey: 2,
-                AVEncoderBitRateKey: 192_000,
+                AVFormatIDKey: kAudioFormatMPEG4AAC, AVSampleRateKey: 48000, AVNumberOfChannelsKey: 2, AVEncoderBitRateKey: 192_000,
             ])
             input.expectsMediaDataInRealTime = false
             writer.add(input)
             aInput = input
         }
 
-        guard reader.startReading() else {
-            throw ExportError.readerFailed(reader.error?.localizedDescription ?? "unknown")
-        }
-        guard writer.startWriting() else {
-            throw ExportError.writerFailed(writer.error?.localizedDescription ?? "unknown")
-        }
+        guard reader.startReading() else { throw ExportError.readerFailed(reader.error?.localizedDescription ?? "unknown") }
+        guard writer.startWriting() else { throw ExportError.writerFailed(writer.error?.localizedDescription ?? "unknown") }
         writer.startSession(atSourceTime: .zero)
 
-        // ---- Pump --------------------------------------------------------------
-        let total = max(totalDuration.seconds, 0.001)
+        let total = max(timeline.duration, 0.001)
         let group = DispatchGroup()
-
         func pump(_ input: AVAssetWriterInput, _ output: AVAssetReaderOutput, label: String, reportsProgress: Bool) {
             group.enter()
-            let queue = DispatchQueue(label: "export.\(label)")
-            input.requestMediaDataWhenReady(on: queue) { [self] in
+            input.requestMediaDataWhenReady(on: DispatchQueue(label: "export.\(label)")) { [self] in
                 while input.isReadyForMoreMediaData {
                     if isCancelled { input.markAsFinished(); group.leave(); return }
-                    guard let sample = output.copyNextSampleBuffer() else {
-                        input.markAsFinished(); group.leave(); return
-                    }
+                    guard let sample = output.copyNextSampleBuffer() else { input.markAsFinished(); group.leave(); return }
                     if !input.append(sample) { input.markAsFinished(); group.leave(); return }
-                    if reportsProgress {
-                        progress(min(1, CMSampleBufferGetPresentationTimeStamp(sample).seconds / total))
-                    }
+                    if reportsProgress { progress(min(1, CMSampleBufferGetPresentationTimeStamp(sample).seconds / total)) }
                 }
             }
         }
-
         pump(vInput, videoOut, label: "video", reportsProgress: true)
         if let aInput, let audioOut { pump(aInput, audioOut, label: "audio", reportsProgress: false) }
+        await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in group.notify(queue: .global()) { c.resume() } }
 
-        await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
-            group.notify(queue: .global()) { c.resume() }
-        }
-
-        // ---- Finish ------------------------------------------------------------
         if isCancelled {
-            reader.cancelReading(); writer.cancelWriting()
-            try? fm.removeItem(at: tempURL)
+            reader.cancelReading(); writer.cancelWriting(); try? fm.removeItem(at: tempURL)
             throw ExportError.cancelled
         }
         if reader.status == .failed {

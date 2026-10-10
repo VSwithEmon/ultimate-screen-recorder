@@ -27,13 +27,16 @@ final class RecorderModel: ObservableObject {
     @Published var elapsed: TimeInterval = 0
     @Published var screenPermission: PermissionState = .notDetermined
     @Published var micPermission: PermissionState = .notDetermined
+    @Published var cameraPermission: PermissionState = .notDetermined
 
     @Published var recordSystemAudio = true
     @Published var recordMicrophone = true
-    @Published var cursorInVideo = true
+    @Published var recordCamera = false
+    /// The cursor is recorded separately and rendered in the editor; baking it in disables cursor editing.
+    @Published var cursorInVideo = false
+    var onFinished: ((URL) -> Void)?
 
-    @Published var exportProgress: Double?
-    @Published var exportMessage: String?
+    @Published var notice: String?
 
     private var session: CaptureSession?
     private var cursorLog: CursorEventLog?
@@ -42,7 +45,6 @@ final class RecorderModel: ObservableObject {
     private var projectURL: URL?
     private var project: Project?
     private var startedAt = Date()
-    private var exporter: Exporter?
 
     var projectsDirectory: URL {
         let base = FileManager.default.urls(for: .moviesDirectory, in: .userDomainMask)[0].appendingPathComponent("ScreenRec")
@@ -61,6 +63,11 @@ final class RecorderModel: ObservableObject {
         case .denied, .restricted: micPermission = .denied
         default: micPermission = .notDetermined
         }
+        switch AVCaptureDevice.authorizationStatus(for: .video) {
+        case .authorized: cameraPermission = .granted
+        case .denied, .restricted: cameraPermission = .denied
+        default: cameraPermission = .notDetermined
+        }
     }
 
     func requestScreenAccess() {
@@ -71,6 +78,12 @@ final class RecorderModel: ObservableObject {
 
     func requestMicAccess() {
         AVCaptureDevice.requestAccess(for: .audio) { [weak self] _ in
+            Task { @MainActor in self?.refreshPermissions() }
+        }
+    }
+
+    func requestCameraAccess() {
+        AVCaptureDevice.requestAccess(for: .video) { [weak self] _ in
             Task { @MainActor in self?.refreshPermissions() }
         }
     }
@@ -100,8 +113,12 @@ final class RecorderModel: ObservableObject {
             state = .failed("Microphone permission is not granted. Grant it or turn the microphone off.")
             return
         }
+        if recordCamera && cameraPermission != .granted {
+            state = .failed("Camera permission is not granted. Grant it or turn the camera off.")
+            return
+        }
         state = .starting
-        exportMessage = nil
+        notice = nil
         do {
             let name = "Recording \(Self.nameFormatter.string(from: Date()))"
             let (project, url) = try ProjectStore.create(name: name, in: projectsDirectory)
@@ -109,7 +126,7 @@ final class RecorderModel: ObservableObject {
             self.projectURL = url
 
             let session = CaptureSession(projectURL: url, options: CaptureOptions(
-                fps: 30, systemAudio: recordSystemAudio, microphone: recordMicrophone, cursorInVideo: cursorInVideo))
+                fps: 30, systemAudio: recordSystemAudio, microphone: recordMicrophone, camera: recordCamera, cursorInVideo: cursorInVideo))
             session.onError = { [weak self] msg in Task { @MainActor in await self?.captureFailed(msg) } }
             let info = try await session.start()
             self.session = session
@@ -146,6 +163,7 @@ final class RecorderModel: ObservableObject {
             self.session = nil
             self.project = project
             state = .finished(url)
+            onFinished?(url)
         } catch {
             // Media written so far stays on disk; the project keeps its in-progress marker so it is recoverable.
             self.session = nil
@@ -156,7 +174,7 @@ final class RecorderModel: ObservableObject {
     private func captureFailed(_ message: String) async {
         guard state == .recording else { return }
         await stop()
-        if case .finished = state { exportMessage = message } else { state = .failed(message) }
+        if case .finished = state { notice = message } else { state = .failed(message) }
     }
 
     private func teardownCapture() {
@@ -198,48 +216,6 @@ final class RecorderModel: ObservableObject {
         cursorLog?.close()
         cursorLog = nil
     }
-
-    // MARK: Export
-
-    func export(projectURL url: URL) async {
-        guard exportProgress == nil else { return }
-        do {
-            let project = try ProjectStore.load(from: url)
-            guard let screen = project.sources.first(where: { $0.type == .screen }) else {
-                exportMessage = "Project has no screen source."; return
-            }
-            let missing = ProjectStore.missingSources(of: project, in: url)
-            if !missing.isEmpty { exportMessage = "Missing media: \(missing.joined(separator: ", "))"; return }
-
-            let panel = NSSavePanel()
-            panel.allowedContentTypes = [.mpeg4Movie]
-            panel.nameFieldStringValue = project.name + ".mp4"
-            panel.directoryURL = FileManager.default.urls(for: .moviesDirectory, in: .userDomainMask).first
-            guard panel.runModal() == .OK, let out = panel.url else { return }
-
-            let audio = project.sources.filter { $0.type == .microphone || $0.type == .systemAudio }
-                .map { ExportJob.Stream(url: ProjectStore.resolve($0, in: url), offset: $0.startOffset) }
-            // Output keeps the source aspect ratio inside 1920x1080 only when it is 16:9; otherwise it is letterboxed.
-            let job = ExportJob(video: .init(url: ProjectStore.resolve(screen, in: url), offset: screen.startOffset),
-                                audio: audio, outputURL: out,
-                                width: project.exportSettings.width, height: project.exportSettings.height,
-                                fps: project.exportSettings.fps)
-            let exporter = Exporter()
-            self.exporter = exporter
-            exportProgress = 0
-            exportMessage = nil
-            try await exporter.export(job) { p in Task { @MainActor [weak self] in self?.exportProgress = p } }
-            exportProgress = nil
-            exportMessage = "Exported to \(out.path)"
-            NSWorkspace.shared.activateFileViewerSelecting([out])
-        } catch {
-            exportProgress = nil
-            exportMessage = error.localizedDescription
-        }
-        exporter = nil
-    }
-
-    func cancelExport() { exporter?.cancel() }
 
     private static let nameFormatter: DateFormatter = {
         let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd 'at' HH.mm.ss"; return f

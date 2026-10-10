@@ -3,130 +3,233 @@ import ScreenRecCore
 import SwiftUI
 
 @main
-struct ScreenRecApp: App {
-    @StateObject private var model = RecorderModel()
+struct UltimateScreenRecordingApp: App {
+    @StateObject private var app = AppState()
 
     var body: some Scene {
         WindowGroup("Ultimate Screen Recording") {
-            ContentView()
-                .environmentObject(model)
-                .frame(minWidth: 560, minHeight: 520)
+            RootView()
+                .environmentObject(app)
+                .environmentObject(app.recorder)
+                .frame(minWidth: 1100, minHeight: 700)
+                .preferredColorScheme(.dark)
         }
         .windowResizability(.contentMinSize)
+        .defaultSize(width: 1360, height: 860)
+        .commands {
+            CommandGroup(after: .newItem) {
+                Button("Export…") { app.editor?.showExport = true }.keyboardShortcut("e", modifiers: .command).disabled(app.editor == nil)
+            }
+            CommandGroup(replacing: .undoRedo) {
+                Button("Undo") { app.editor?.undo() }.keyboardShortcut("z", modifiers: .command).disabled(!(app.editor?.canUndo ?? false))
+                Button("Redo") { app.editor?.redo() }.keyboardShortcut("z", modifiers: [.command, .shift]).disabled(!(app.editor?.canRedo ?? false))
+            }
+            CommandMenu("Insert") {
+                Button("Automatic Zoom from Clicks") { app.editor?.generateAutomaticZoom() }
+                Button("Manual Zoom at Playhead") { app.editor?.addManualZoom() }
+                Divider()
+                Button("Sensitive Data Mask") { app.editor?.addMask(.sensitive) }
+                Button("Highlight Mask") { app.editor?.addMask(.highlight) }
+            }
+        }
     }
 }
 
-struct ContentView: View {
+@MainActor
+final class AppState: ObservableObject {
+    @Published var editor: EditorModel?
+    @Published var openError: String?
+    let recorder = RecorderModel()
+
+    init() {
+        recorder.onFinished = { [weak self] url in self?.open(url) }
+        // `--open <project>` opens a project directly (used for QA and scripting).
+        let args = CommandLine.arguments
+        if let i = args.firstIndex(of: "--open"), i + 1 < args.count { open(URL(fileURLWithPath: args[i + 1])) }
+    }
+
+    func open(_ url: URL) {
+        do {
+            let m = try EditorModel(url: url)
+            editor = m
+            Task { await m.load() }
+        } catch {
+            openError = error.localizedDescription
+        }
+    }
+
+    func closeEditor() {
+        editor?.shutdown()
+        editor = nil
+    }
+}
+
+struct RootView: View {
+    @EnvironmentObject var app: AppState
+    var body: some View {
+        Group {
+            if let editor = app.editor {
+                EditorView(model: editor, onClose: { app.closeEditor() })
+            } else {
+                HomeView()
+            }
+        }
+        .background(Theme.base)
+        .alert("Could not open project", isPresented: Binding(get: { app.openError != nil }, set: { if !$0 { app.openError = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: { Text(app.openError ?? "") }
+    }
+}
+
+struct ProjectItem: Identifiable {
+    let id: URL
+    let name: String
+    let date: Date
+    let incomplete: Bool
+}
+
+struct HomeView: View {
+    @EnvironmentObject var app: AppState
     @EnvironmentObject var model: RecorderModel
+    @State private var projects: [ProjectItem] = []
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            permissions
-            Divider()
-            options
-            recordControls
-            if case .finished(let url) = model.state { result(url) }
-            if case .failed(let message) = model.state {
-                Label(message, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red).font(.callout)
+        HStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 22) {
+                    HStack(spacing: 10) {
+                        Image(systemName: "record.circle.fill").font(.system(size: 26)).foregroundStyle(Theme.blueBright)
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text("Ultimate Screen Recording").font(.system(size: 20, weight: .bold))
+                            Text("Record beautifully. Edit effortlessly. Share anywhere.").font(.system(size: 12)).foregroundStyle(Theme.text2)
+                        }
+                    }
+                    recordCard
+                    permissionsCard
+                }
+                .padding(28).frame(maxWidth: 520, alignment: .leading)
             }
-            Spacer(minLength: 0)
+            .frame(width: 580).background(Theme.panel)
+            Divider().overlay(Theme.line)
+            projectsList
         }
-        .padding(20)
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            model.refreshPermissions()
-        }
+        .onAppear { reload(); model.refreshPermissions() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in model.refreshPermissions(); reload() }
     }
 
-    private var permissions: some View {
+    // MARK: Record
+
+    private var recordCard: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Permissions").font(.headline)
-            permissionRow("Screen Recording", model.screenPermission,
-                          request: model.requestScreenAccess,
-                          settings: { model.openSystemSettings("Privacy_ScreenCapture") })
-            permissionRow("Microphone", model.micPermission,
-                          request: model.requestMicAccess,
-                          settings: { model.openSystemSettings("Privacy_Microphone") })
-            if model.screenPermission != .granted {
-                Text("After enabling Screen Recording in System Settings, quit and reopen Ultimate Screen Recording — macOS only applies it on next launch.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-        }
-    }
-
-    private func permissionRow(_ title: String, _ state: PermissionState, request: @escaping () -> Void, settings: @escaping () -> Void) -> some View {
-        HStack {
-            Image(systemName: state == .granted ? "checkmark.circle.fill" : "exclamationmark.circle")
-                .foregroundStyle(state == .granted ? .green : .orange)
-            Text(title)
-            Text(state.label).foregroundStyle(.secondary)
-            Spacer()
-            if state != .granted {
-                if state == .notDetermined { Button("Request", action: request) }
-                Button("Open Settings", action: settings)
-            }
-        }
-    }
-
-    private var options: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Capture").font(.headline)
-            Text("Main display, 30 fps, H.264. Window and area modes arrive in Phase 1.").font(.caption).foregroundStyle(.secondary)
+            Text("New recording").font(.system(size: 14, weight: .semibold))
+            Text("Main display · 30 fps. Window and area capture are not available yet.").font(.system(size: 11)).foregroundStyle(Theme.text3)
             Toggle("System audio", isOn: $model.recordSystemAudio)
             Toggle("Microphone", isOn: $model.recordMicrophone)
-            Toggle("Include cursor in video (until the Phase 3 cursor engine exists)", isOn: $model.cursorInVideo)
-        }
-        .disabled(!model.canStart)
-    }
-
-    private var recordControls: some View {
-        HStack(spacing: 12) {
-            switch model.state {
-            case .recording:
-                Button { Task { await model.stop() } } label: { Label("Stop", systemImage: "stop.circle.fill") }
-                    .buttonStyle(.borderedProminent).tint(.red)
-                Text(timeString(model.elapsed)).monospacedDigit()
-            case .starting, .finalizing:
-                ProgressView().controlSize(.small)
-                Text(model.state == .starting ? "Starting…" : "Finalizing files…")
-            default:
-                Button { Task { await model.start() } } label: { Label("Record", systemImage: "record.circle") }
-                    .buttonStyle(.borderedProminent).disabled(!model.canStart)
-            }
-        }
-    }
-
-    private func result(_ url: URL) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Saved to \(url.lastPathComponent)").font(.headline)
-            if let project = try? ProjectStore.load(from: url),
-               let screen = project.sources.first(where: { $0.type == .screen }) {
-                PlayerView(url: ProjectStore.resolve(screen, in: url))
-                    .frame(minHeight: 220).clipShape(RoundedRectangle(cornerRadius: 8))
-            }
-            HStack {
-                Button("Export MP4…") { Task { await model.export(projectURL: url) } }
-                    .disabled(model.exportProgress != nil)
-                Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
-                if let p = model.exportProgress {
-                    ProgressView(value: p).frame(width: 120)
-                    Button("Cancel") { model.cancelExport() }
+            Toggle("Camera (separate track)", isOn: $model.recordCamera)
+            Toggle("Bake the cursor into the video", isOn: $model.cursorInVideo)
+            Text(model.cursorInVideo ? "Cursor effects, smoothing and automatic zoom won't be available for this recording." : "The cursor is recorded separately so you can restyle it, smooth it and zoom automatically.")
+                .font(.system(size: 11)).foregroundStyle(Theme.text3)
+            HStack(spacing: 12) {
+                switch model.state {
+                case .recording:
+                    Button { Task { await model.stop() } } label: { Label("Stop recording", systemImage: "stop.circle.fill") }
+                        .buttonStyle(PrimaryButtonStyle()).tint(.red)
+                    Circle().fill(Theme.bad).frame(width: 8, height: 8)
+                    Text(timeString(model.elapsed)).monospacedDigit()
+                case .starting, .finalizing:
+                    ProgressView().controlSize(.small)
+                    Text(model.state == .starting ? "Starting…" : "Saving your recording…").foregroundStyle(Theme.text2)
+                default:
+                    Button { Task { await model.start() } } label: { Label("Start recording", systemImage: "record.circle") }.buttonStyle(PrimaryButtonStyle())
                 }
+            }.padding(.top, 4)
+            if case .failed(let m) = model.state {
+                Label(m, systemImage: "exclamationmark.triangle.fill").font(.system(size: 12)).foregroundStyle(Theme.bad)
             }
-            if let m = model.exportMessage { Text(m).font(.caption).foregroundStyle(.secondary) }
+            if let n = model.notice { Text(n).font(.system(size: 12)).foregroundStyle(Theme.text2) }
+        }
+        .toggleStyle(.switch).tint(Theme.blue).controlSize(.small).font(.system(size: 12))
+        .disabled(!model.canStart && model.state != .recording)
+        .padding(16).frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.bar, in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    private var permissionsCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Permissions").font(.system(size: 14, weight: .semibold))
+            permissionRow("Screen Recording", model.screenPermission, request: model.requestScreenAccess, pane: "Privacy_ScreenCapture")
+            permissionRow("Microphone", model.micPermission, request: model.requestMicAccess, pane: "Privacy_Microphone")
+            permissionRow("Camera", model.cameraPermission, request: model.requestCameraAccess, pane: "Privacy_Camera")
+            if model.screenPermission != .granted {
+                Text("After enabling Screen Recording in System Settings, quit and reopen the app. macOS applies it on the next launch.")
+                    .font(.system(size: 11)).foregroundStyle(Theme.text3)
+            }
+            Text("Cursor tracking records position and clicks only, never what you type.").font(.system(size: 11)).foregroundStyle(Theme.text3)
+        }
+        .padding(16).frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.bar, in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    private func permissionRow(_ title: String, _ state: PermissionState, request: @escaping () -> Void, pane: String) -> some View {
+        HStack {
+            Image(systemName: state == .granted ? "checkmark.circle.fill" : "exclamationmark.circle").foregroundStyle(state == .granted ? Theme.ok : Color.orange)
+            Text(title).font(.system(size: 12, weight: .medium))
+            Text(state.label).font(.system(size: 12)).foregroundStyle(Theme.text3)
+            Spacer()
+            if state != .granted {
+                if state == .notDetermined { Button("Request", action: request).buttonStyle(QuietButtonStyle()) }
+                Button("Open Settings") { model.openSystemSettings(pane) }.buttonStyle(QuietButtonStyle())
+            }
         }
     }
 
-    private func timeString(_ t: TimeInterval) -> String {
-        String(format: "%02d:%02d", Int(t) / 60, Int(t) % 60)
-    }
-}
+    // MARK: Projects
 
-struct PlayerView: NSViewRepresentable {
-    let url: URL
-    func makeNSView(context: Context) -> AVPlayerView {
-        let v = AVPlayerView()
-        v.player = AVPlayer(url: url)
-        return v
+    private var projectsList: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("Projects").font(.system(size: 16, weight: .bold))
+                Spacer()
+                Button { let p = NSOpenPanel(); p.canChooseDirectories = true; p.canChooseFiles = true; p.directoryURL = model.projectsDirectory
+                    if p.runModal() == .OK, let u = p.url { app.open(u) } } label: { Label("Open project…", systemImage: "folder") }.buttonStyle(QuietButtonStyle())
+            }.padding(20)
+            Divider().overlay(Theme.line)
+            if projects.isEmpty {
+                VStack(spacing: 8) {
+                    Image(systemName: "film.stack").font(.system(size: 34)).foregroundStyle(Theme.text3)
+                    Text("No projects yet").font(.system(size: 14, weight: .semibold))
+                    Text("Record your screen and it will appear here, ready to edit.").font(.system(size: 12)).foregroundStyle(Theme.text3)
+                }.frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                List(projects) { p in
+                    Button { if !p.incomplete { app.open(p.id) } } label: {
+                        HStack {
+                            Image(systemName: p.incomplete ? "exclamationmark.triangle" : "film").foregroundStyle(p.incomplete ? Color.orange : Theme.blueFocus).frame(width: 24)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(p.name).font(.system(size: 13, weight: .medium))
+                                Text(p.incomplete ? "Recording was interrupted and cannot be opened" : p.date.formatted(date: .abbreviated, time: .shortened))
+                                    .font(.system(size: 11)).foregroundStyle(Theme.text3)
+                            }
+                            Spacer()
+                            if !p.incomplete { Image(systemName: "chevron.right").foregroundStyle(Theme.text3) }
+                        }.contentShape(Rectangle())
+                    }.buttonStyle(.plain).listRowBackground(Color.clear)
+                }
+                .listStyle(.plain).scrollContentBackground(.hidden)
+            }
+        }
+        .frame(maxWidth: .infinity).background(Theme.base)
     }
-    func updateNSView(_ v: AVPlayerView, context: Context) {}
+
+    private func reload() {
+        let dir = model.projectsDirectory
+        let urls = (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
+        projects = urls.filter { $0.pathExtension == ProjectStore.packageExtension }.compactMap { u in
+            let date = (try? u.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+            let name = (try? ProjectStore.load(from: u).name) ?? u.deletingPathExtension().lastPathComponent
+            return ProjectItem(id: u, name: name, date: date, incomplete: ProjectStore.isIncomplete(at: u))
+        }.sorted { $0.date > $1.date }
+    }
+
+    private func timeString(_ t: TimeInterval) -> String { String(format: "%02d:%02d", Int(t) / 60, Int(t) % 60) }
 }

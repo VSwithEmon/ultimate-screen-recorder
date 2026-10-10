@@ -61,6 +61,7 @@ public struct Project: Codable, Equatable {
     public var capture: CaptureInfo?
     public var cursorEventsPath: String?
     public var exportSettings: ExportSettings
+    public var edit = EditState()
 
     public init(name: String, canvas: Canvas = Canvas(width: 1920, height: 1080, fps: 30), createdAt: Date = Date()) {
         self.schemaVersion = Project.currentSchemaVersion
@@ -73,5 +74,26 @@ public struct Project: Codable, Equatable {
         self.capture = nil
         self.cursorEventsPath = nil
         self.exportSettings = ExportSettings(fps: canvas.fps)
+    }
+}
+
+extension Project {
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion, projectId, name, createdAt, canvas, sources, capture, cursorEventsPath, exportSettings, edit
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        schemaVersion = try c.decode(Int.self, forKey: .schemaVersion)
+        projectId = try c.decode(UUID.self, forKey: .projectId)
+        name = try c.decode(String.self, forKey: .name)
+        createdAt = try c.decode(Date.self, forKey: .createdAt)
+        canvas = try c.decode(Canvas.self, forKey: .canvas)
+        sources = try c.decode([Source].self, forKey: .sources)
+        capture = try c.decodeIfPresent(CaptureInfo.self, forKey: .capture)
+        cursorEventsPath = try c.decodeIfPresent(String.self, forKey: .cursorEventsPath)
+        exportSettings = try c.decode(ExportSettings.self, forKey: .exportSettings)
+        // Additive field: v1 manifests written before the editor existed load with defaults.
+        edit = try c.decodeIfPresent(EditState.self, forKey: .edit) ?? EditState()
     }
 }

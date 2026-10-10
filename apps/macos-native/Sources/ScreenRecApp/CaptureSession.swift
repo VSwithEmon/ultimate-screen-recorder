@@ -7,6 +7,7 @@ struct CaptureOptions {
     var fps = 30
     var systemAudio = true
     var microphone = true
+    var camera = false
     /// Phase 0 fallback: the cursor engine (Phase 3) does not exist yet, so bake the OS cursor into the video.
     var cursorInVideo = true
 }
@@ -75,7 +76,7 @@ enum CaptureError: LocalizedError {
 
 /// Phase 0 capture: one display via ScreenCaptureKit (+ system audio), microphone via AVCaptureSession.
 /// All streams carry host-clock timestamps; `t0` is the shared origin and each stream's start offset is saved.
-final class CaptureSession: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptureAudioDataOutputSampleBufferDelegate, @unchecked Sendable {
+final class CaptureSession: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptureAudioDataOutputSampleBufferDelegate, AVCaptureVideoDataOutputSampleBufferDelegate, @unchecked Sendable {
     let t0: Double
     private let projectURL: URL
     private let options: CaptureOptions
@@ -84,6 +85,8 @@ final class CaptureSession: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
     private var videoWriter: StreamFileWriter?
     private var systemWriter: StreamFileWriter?
     private var micWriter: StreamFileWriter?
+    private var cameraWriter: StreamFileWriter?
+    private var cameraOutput: AVCaptureVideoDataOutput?
     private var info: CaptureInfo?
     var onError: (@Sendable (String) -> Void)?
 
@@ -149,7 +152,7 @@ final class CaptureSession: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
         if let systemWriter { try stream.addStreamOutput(self, type: .audio, sampleHandlerQueue: systemWriter.queue) }
         self.stream = stream
 
-        if let micWriter { try startMicrophone(queue: micWriter.queue) }
+        if micWriter != nil || options.camera { try startDevices() }
         try await stream.startCapture()
 
         let captureInfo = CaptureInfo(displayFrame: display.frame, pixelWidth: width, pixelHeight: height,
@@ -158,16 +161,37 @@ final class CaptureSession: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
         return captureInfo
     }
 
-    private func startMicrophone(queue: DispatchQueue) throws {
-        guard let device = AVCaptureDevice.default(for: .audio) else { throw CaptureError.writerSetup("no microphone available") }
+    private func startDevices() throws {
         let session = AVCaptureSession()
-        let input = try AVCaptureDeviceInput(device: device)
-        guard session.canAddInput(input) else { throw CaptureError.writerSetup("cannot use microphone input") }
-        session.addInput(input)
-        let output = AVCaptureAudioDataOutput()
-        output.setSampleBufferDelegate(self, queue: queue)
-        guard session.canAddOutput(output) else { throw CaptureError.writerSetup("cannot read microphone samples") }
-        session.addOutput(output)
+        if let micWriter {
+            guard let device = AVCaptureDevice.default(for: .audio) else { throw CaptureError.writerSetup("no microphone available") }
+            let input = try AVCaptureDeviceInput(device: device)
+            guard session.canAddInput(input) else { throw CaptureError.writerSetup("cannot use microphone input") }
+            session.addInput(input)
+            let output = AVCaptureAudioDataOutput()
+            output.setSampleBufferDelegate(self, queue: micWriter.queue)
+            guard session.canAddOutput(output) else { throw CaptureError.writerSetup("cannot read microphone samples") }
+            session.addOutput(output)
+        }
+        if options.camera {
+            guard let device = AVCaptureDevice.default(for: .video) else { throw CaptureError.writerSetup("no camera available") }
+            let input = try AVCaptureDeviceInput(device: device)
+            guard session.canAddInput(input) else { throw CaptureError.writerSetup("cannot use camera input") }
+            session.addInput(input)
+            let dims = CMVideoFormatDescriptionGetDimensions(device.activeFormat.formatDescription)
+            let w = Geometry.evenPixels(CGFloat(dims.width)), h = Geometry.evenPixels(CGFloat(dims.height))
+            let writer = try StreamFileWriter(
+                url: projectURL.appendingPathComponent("Media/camera.mov"), fileType: .mov, mediaType: .video,
+                settings: [AVVideoCodecKey: AVVideoCodecType.h264, AVVideoWidthKey: w, AVVideoHeightKey: h,
+                           AVVideoCompressionPropertiesKey: [AVVideoAverageBitRateKey: w * h * 4]], label: "camera")
+            cameraWriter = writer
+            let output = AVCaptureVideoDataOutput()
+            output.alwaysDiscardsLateVideoFrames = true
+            output.setSampleBufferDelegate(self, queue: writer.queue)
+            guard session.canAddOutput(output) else { throw CaptureError.writerSetup("cannot read camera frames") }
+            session.addOutput(output)
+            cameraOutput = output
+        }
         session.startRunning()
         micSession = session
     }
@@ -185,6 +209,9 @@ final class CaptureSession: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
         }
         if let w = systemWriter, await w.finish() {
             sources.append(Source(id: "system1", type: .systemAudio, path: "Media/system.m4a", startOffset: offset(w)))
+        }
+        if let w = cameraWriter, await w.finish() {
+            sources.append(Source(id: "camera1", type: .camera, path: "Media/camera.mov", startOffset: offset(w)))
         }
         if let w = micWriter, await w.finish() {
             sources.append(Source(id: "mic1", type: .microphone, path: "Media/mic.m4a", startOffset: offset(w)))
@@ -219,6 +246,6 @@ final class CaptureSession: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
     // MARK: Microphone
 
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
-        micWriter?.append(sampleBuffer)
+        if output === cameraOutput { cameraWriter?.append(sampleBuffer) } else { micWriter?.append(sampleBuffer) }
     }
 }
