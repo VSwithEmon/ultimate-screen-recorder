@@ -29,5 +29,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 PLIST
 # Ad-hoc signing. NOTE: every rebuild changes the code hash, so macOS may ask you to re-grant Screen Recording.
 # For a stable identity, create a local "Code Signing" certificate in Keychain Access and set SIGN_ID to its name.
+xattr -cr "$APP"   # strip Finder metadata/quarantine so the signature is valid
 codesign --force --deep --sign "${SIGN_ID:--}" "$APP"
 echo "Built $APP"
+codesign --verify --deep --strict "$APP" && echo "Signature verified"
