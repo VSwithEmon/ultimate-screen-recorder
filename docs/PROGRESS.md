@@ -6,7 +6,7 @@ Last updated: 2026-10-11. Truthful status only; "done" means verified.
 | # | Phase | Status | Evidence / gap |
 |---|---|---|---|
 | 1 | Landing page | **Done (needs your visual review)** | `site/index.html`; checked in the in-app browser at 375, 1280, 1440, 1920 px: no horizontal overflow, mobile layout fixed. Download buttons are disabled and say "Coming soon". Not yet compared pixel-by-pixel with the reference photos. |
-| 2 | GitHub | **Blocked, needs you** | `gh` is not logged in (`gh auth login`). Repo creation needs your approval. Pages workflow is ready at `.github/workflows/pages.yml`. Nothing is deployed. |
+| 2 | GitHub | **Repo live; Pages deploy being verified** | Public repo `VSwithEmon/ultimate-screen-recorder`, pushed over SSH. Pages source set to GitHub Actions. `gh` CLI login could not be saved because `~/.config` is root-owned; SSH + browser were used instead. |
 | 3 | Recorder MVP (macOS) | **Prototype, not verified on real capture** | `apps/macos-native` (Swift). 16 automated tests pass, app builds and launches. Real capture still needs Screen Recording + Microphone permission and the manual QA in `apps/macos-native/docs/PHASE0.md`. |
 | 4 | Editor MVP | Not started | |
 | 5 | Signature features | Not started | Cursor events are recorded by the prototype; no smoothing/zoom yet. |
