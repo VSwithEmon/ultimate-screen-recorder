@@ -37,6 +37,14 @@ struct Preset: Codable, Identifiable, Equatable {
     var audio: AudioSettings
 }
 
+/// Playback position and state live in their own object so only the playhead and time label redraw while playing,
+/// not the whole editor.
+@MainActor
+final class PlaybackClock: ObservableObject {
+    @Published var time = 0.0
+    @Published var isPlaying = false
+}
+
 @MainActor
 final class EditorModel: ObservableObject {
     let url: URL
@@ -44,8 +52,9 @@ final class EditorModel: ObservableObject {
     @Published private(set) var edit: EditState
     @Published var panel: EditorPanel = .canvas
     @Published var selection: EventSelection?
-    @Published var time = 0.0
-    @Published var isPlaying = false
+    let clock = PlaybackClock()
+    var time: Double { get { clock.time } set { clock.time = newValue } }
+    var isPlaying: Bool { get { clock.isPlaying } set { if clock.isPlaying != newValue { clock.isPlaying = newValue } } }
     @Published private(set) var ready = false
     @Published var loadError: String?
     @Published var waveform: [Float] = []
@@ -85,7 +94,14 @@ final class EditorModel: ObservableObject {
     var hasCursorData: Bool { !(session?.cursor.isEmpty ?? true) }
     var cursorBaked: Bool { project.capture?.cursorBakedIntoVideo ?? false }
     var sourceSize: CGSize { session?.sourceSize ?? CGSize(width: 1920, height: 1080) }
-    var previewRenderer: FrameRenderer? { session?.renderer(for: edit, outputHeight: previewHeight) }
+    private var cachedRenderer: (EditState, FrameRenderer)?
+    /// Renderer used for overlay geometry; rebuilt only when the edit changes.
+    var overlayRenderer: FrameRenderer? {
+        if let (e, r) = cachedRenderer, e == edit { return r }
+        guard let r = session?.renderer(for: edit, outputHeight: previewHeight) else { return nil }
+        cachedRenderer = (edit, r)
+        return r
+    }
 
     // MARK: Loading
 
@@ -112,7 +128,8 @@ final class EditorModel: ObservableObject {
         timeObserver = player.addPeriodicTimeObserver(forInterval: CMTime(value: 1, timescale: 30), queue: .main) { [weak self] t in
             MainActor.assumeIsolated {
                 guard let self, let tl = self.timeline else { return }
-                self.time = tl.tauOffset + max(0, t.seconds)
+                let new = tl.tauOffset + max(0, t.seconds)
+                if abs(new - self.clock.time) > 0.005 { self.clock.time = new }
                 self.isPlaying = self.player.rate != 0
             }
         }

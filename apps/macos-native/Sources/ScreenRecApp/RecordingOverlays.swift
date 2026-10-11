@@ -31,6 +31,7 @@ func makeOverlayPanel(for screen: NSScreen, level: NSWindow.Level = .screenSaver
     let p = OverlayPanel(contentRect: screen.frame, styleMask: [.borderless], backing: .buffered, defer: false)
     p.level = level
     p.hidesOnDeactivate = false          // NSPanel hides itself when the app deactivates by default
+    p.sharingType = .none                // never part of screenshots or screen sharing
     p.becomesKeyOnlyIfNeeded = false
     p.isOpaque = false
     p.backgroundColor = .clear
@@ -356,5 +357,41 @@ struct SpeakerNotesView: View {
                 .padding(6).background(Theme.base, in: RoundedRectangle(cornerRadius: 8))
             Text("Private: these notes are never recorded.").font(.system(size: 12)).foregroundStyle(Theme.text3)
         }.padding(12).background(Theme.panel).foregroundStyle(Theme.text)
+    }
+}
+
+
+/// Shown after a recording stops (capture is already finished, so this window can never appear in the video).
+struct AfterRecordingView: View {
+    let name: String
+    let details: String
+    let onOpen: () -> Void
+    let onRestart: () -> Void
+    let onDiscard: () -> Void
+    let onClose: () -> Void
+
+    var body: some View {
+        VStack(spacing: 14) {
+            Image(systemName: "checkmark.circle.fill").font(.system(size: 36)).foregroundStyle(Theme.ok)
+            Text("Recording saved").font(.system(size: 20, weight: .bold)).foregroundStyle(Theme.text)
+            VStack(spacing: 2) {
+                Text(name).font(.system(size: 13, weight: .medium)).foregroundStyle(Theme.text).lineLimit(1)
+                Text(details).font(.system(size: 12)).foregroundStyle(Theme.text2)
+            }
+            Button(action: onOpen) { Label("Open in editor", systemImage: "slider.horizontal.below.rectangle").frame(maxWidth: .infinity) }
+                .buttonStyle(PrimaryButtonStyle()).keyboardShortcut(.defaultAction)
+            Button(action: onRestart) { Label("Restart recording", systemImage: "arrow.counterclockwise").frame(maxWidth: .infinity) }
+                .buttonStyle(QuietButtonStyle()).overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.control))
+            Text("Restart discards this take (it goes to the Trash) and starts a new one with the same settings.")
+                .font(.system(size: 12)).foregroundStyle(Theme.text3).multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 18) {
+                Button("Discard", action: onDiscard).foregroundStyle(Theme.bad)
+                Button("Close", action: onClose).keyboardShortcut(.cancelAction)
+            }.buttonStyle(.plain).font(.system(size: 13, weight: .semibold))
+        }
+        .padding(24).frame(width: 340)
+        .background(Theme.panel, in: RoundedRectangle(cornerRadius: 18))
+        .overlay(RoundedRectangle(cornerRadius: 18).stroke(Theme.control))
+        .padding(30)
     }
 }

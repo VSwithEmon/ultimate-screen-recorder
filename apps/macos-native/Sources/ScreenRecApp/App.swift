@@ -25,6 +25,11 @@ struct UltimateScreenRecordingApp: App {
                 Button("Undo") { app.editor?.undo() }.keyboardShortcut("z", modifiers: .command).disabled(!(app.editor?.canUndo ?? false))
                 Button("Redo") { app.editor?.redo() }.keyboardShortcut("z", modifiers: [.command, .shift]).disabled(!(app.editor?.canRedo ?? false))
             }
+            CommandMenu("Playback") {
+                Button("Play / Pause") { app.editor?.togglePlay() }.keyboardShortcut(.space, modifiers: [])
+                Button("Previous Marker") { app.editor?.jump(forward: false) }.keyboardShortcut(.leftArrow, modifiers: [.command])
+                Button("Next Marker") { app.editor?.jump(forward: true) }.keyboardShortcut(.rightArrow, modifiers: [.command])
+            }
             CommandMenu("Insert") {
                 Button("Automatic Zoom from Clicks") { app.editor?.generateAutomaticZoom() }
                 Button("Manual Zoom at Playhead") { app.editor?.addManualZoom() }
@@ -45,11 +50,10 @@ final class AppState: ObservableObject {
 
     init() {
         coordinator = RecordingCoordinator(recorder: recorder)
+        coordinator.onOpenProject = { [weak self] url in self?.open(url) }
         recorder.onFinished = { [weak self] url in
             guard let self else { return }
-            let openEditor = self.coordinator.settings.openEditorAfter
-            self.coordinator.recordingEnded()
-            if openEditor { self.open(url) }
+            self.coordinator.recordingFinished(url: url, elapsed: self.recorder.elapsed)
         }
         // `--open <project>` opens a project directly (used for QA and scripting).
         let args = CommandLine.arguments

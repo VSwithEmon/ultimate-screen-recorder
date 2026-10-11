@@ -36,6 +36,8 @@ final class StreamFileWriter: @unchecked Sendable {
     private let input: AVAssetWriterInput
     private(set) var firstPTS: CMTime?
     private(set) var droppedSamples = 0
+    /// Rejects samples with implausible timestamps (some cameras emit a stale first frame stamped near zero).
+    var accept: ((CMTime) -> Bool)?
 
     init(url: URL, fileType: AVFileType, mediaType: AVMediaType, settings: [String: Any], label: String) throws {
         self.url = url
@@ -49,6 +51,7 @@ final class StreamFileWriter: @unchecked Sendable {
     func append(_ sample: CMSampleBuffer) {
         guard sample.isValid, CMSampleBufferGetNumSamples(sample) > 0 else { return }
         let pts = CMSampleBufferGetPresentationTimeStamp(sample)
+        if let accept, !accept(pts) { droppedSamples += 1; return }
         if firstPTS == nil {
             guard writer.startWriting() else { return }
             writer.startSession(atSourceTime: pts)
@@ -59,14 +62,16 @@ final class StreamFileWriter: @unchecked Sendable {
     }
 
     /// Returns false if no sample ever arrived (file is removed).
-    func finish() async -> Bool {
+    /// `endAt` extends the file to the real stop time (a static screen otherwise ends at its last changed frame).
+    func finish(endAt: CMTime? = nil) async -> Bool {
         await withCheckedContinuation { (c: CheckedContinuation<Bool, Never>) in
             queue.async { [self] in
-                guard firstPTS != nil else {
+                guard let first = firstPTS else {
                     writer.cancelWriting()
                     try? FileManager.default.removeItem(at: url)
                     c.resume(returning: false); return
                 }
+                if let endAt, endAt > first, writer.status == .writing { writer.endSession(atSourceTime: endAt) }
                 input.markAsFinished()
                 writer.finishWriting { c.resume(returning: self.writer.status == .completed) }
             }
@@ -99,6 +104,8 @@ final class CaptureSession: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
     private var cameraWriter: StreamFileWriter?
     private var cameraOutput: AVCaptureVideoDataOutput?
     private var info: CaptureInfo?
+    /// Seconds to add to camera/microphone timestamps (session clock) to express them on the host clock.
+    private var deviceClockDelta = 0.0
     var onError: (@Sendable (String) -> Void)?
 
     private let target: CaptureTarget
@@ -112,7 +119,9 @@ final class CaptureSession: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
 
     func start() async throws -> CaptureInfo {
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-        // Never record this app's own windows (toolbar, overlays, preview).
+        // Never record this app's own windows (toolbar, recording timer, camera preview, notes). Excluding the whole
+        // application also covers windows created while recording; the per-window list is only needed to hide desktop icons.
+        let ownApps = content.applications.filter { $0.bundleIdentifier == Bundle.main.bundleIdentifier }
         var excluded = content.windows.filter { $0.owningApplication?.bundleIdentifier == Bundle.main.bundleIdentifier }
         if options.hideDesktopIcons {
             let iconLevel = Int(CGWindowLevelForKey(.desktopIconWindow))
@@ -126,7 +135,9 @@ final class CaptureSession: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
         case .display(let id), .area(let id, _):
             displayID = id
             guard let display = content.displays.first(where: { $0.displayID == id }) ?? content.displays.first else { throw CaptureError.noDisplay }
-            filter = SCContentFilter(display: display, excludingWindows: excluded)
+            filter = options.hideDesktopIcons
+                ? SCContentFilter(display: display, excludingWindows: excluded)
+                : SCContentFilter(display: display, excludingApplications: ownApps, exceptingWindows: [])
             if case .area(_, let r) = target { sourceRect = r }
         case .window(let wid):
             guard let win = content.windows.first(where: { $0.windowID == wid }) else { throw CaptureError.noDisplay }
@@ -179,6 +190,7 @@ final class CaptureSession: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
             if options.microphone {
                 micWriter = try StreamFileWriter(url: media.appendingPathComponent("mic.m4a"), fileType: .m4a,
                                                  mediaType: .audio, settings: aacSettings, label: "mic")
+                micWriter?.accept = { [weak self] pts in self?.plausible(pts) ?? true }
             }
         } catch {
             throw CaptureError.writerSetup(error.localizedDescription)
@@ -225,6 +237,7 @@ final class CaptureSession: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
                 url: projectURL.appendingPathComponent("Media/camera.mov"), fileType: .mov, mediaType: .video,
                 settings: [AVVideoCodecKey: AVVideoCodecType.h264, AVVideoWidthKey: w, AVVideoHeightKey: h,
                            AVVideoCompressionPropertiesKey: [AVVideoAverageBitRateKey: w * h * 4]], label: "camera")
+            writer.accept = { [weak self] pts in self?.plausible(pts) ?? true }
             cameraWriter = writer
             let output = AVCaptureVideoDataOutput()
             output.alwaysDiscardsLateVideoFrames = true
@@ -234,28 +247,44 @@ final class CaptureSession: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
             cameraOutput = output
         }
         session.startRunning()
+        // Camera frames are stamped on the capture session's clock, which is not the host clock; remember the difference.
+        if let clock = session.synchronizationClock {
+            deviceClockDelta = CMClockGetTime(CMClockGetHostTimeClock()).seconds - CMClockGetTime(clock).seconds
+        }
         micSession = session
+    }
+
+    /// A device sample is plausible if, on the host clock, it is within a few seconds of "now".
+    private func plausible(_ pts: CMTime) -> Bool {
+        abs(pts.seconds + deviceClockDelta - CMClockGetTime(CMClockGetHostTimeClock()).seconds) < 5
     }
 
     func stop() async throws -> CaptureResult {
         micSession?.stopRunning()
         try? await stream?.stopCapture()
         stream = nil
+        let hostNow = CMClockGetTime(CMClockGetHostTimeClock())
+        let deviceNow = CMTime(seconds: hostNow.seconds - deviceClockDelta, preferredTimescale: 600)
 
         var sources: [Source] = []
-        func offset(_ w: StreamFileWriter) -> Double { (w.firstPTS?.seconds ?? t0) - t0 }
+        let screenOffset = (videoWriter?.firstPTS?.seconds ?? t0) - t0
+        func offset(_ w: StreamFileWriter, device: Bool = false) -> Double {
+            let v = (w.firstPTS?.seconds ?? t0) + (device ? deviceClockDelta : 0) - t0
+            // A stream whose clock could not be reconciled must never wreck the timeline: fall back to the screen's start.
+            return abs(v - screenOffset) > 120 ? screenOffset : v
+        }
 
-        if let w = videoWriter, await w.finish() {
+        if let w = videoWriter, await w.finish(endAt: hostNow) {
             sources.append(Source(id: "screen1", type: .screen, path: "Media/screen.mov", startOffset: offset(w)))
         }
-        if let w = systemWriter, await w.finish() {
+        if let w = systemWriter, await w.finish(endAt: hostNow) {
             sources.append(Source(id: "system1", type: .systemAudio, path: "Media/system.m4a", startOffset: offset(w)))
         }
-        if let w = cameraWriter, await w.finish() {
-            sources.append(Source(id: "camera1", type: .camera, path: "Media/camera.mov", startOffset: offset(w)))
+        if let w = cameraWriter, await w.finish(endAt: deviceNow) {
+            sources.append(Source(id: "camera1", type: .camera, path: "Media/camera.mov", startOffset: offset(w, device: true)))
         }
-        if let w = micWriter, await w.finish() {
-            sources.append(Source(id: "mic1", type: .microphone, path: "Media/mic.m4a", startOffset: offset(w)))
+        if let w = micWriter, await w.finish(endAt: deviceNow) {
+            sources.append(Source(id: "mic1", type: .microphone, path: "Media/mic.m4a", startOffset: offset(w, device: true)))
         }
         guard let info, sources.contains(where: { $0.type == .screen }) else {
             throw CaptureError.writerSetup("no video frames were captured (is Screen Recording permission granted?)")

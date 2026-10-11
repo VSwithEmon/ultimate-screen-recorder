@@ -76,7 +76,8 @@ public final class EditorSession {
         public let duration: Double
     }
 
-    private struct Loaded { var source: Source; var asset: AVURLAsset; var track: AVAssetTrack; var duration: Double }
+    /// `sourceStart` skips a stale leading sample in files written by early builds.
+    private struct Loaded { var source: Source; var asset: AVURLAsset; var track: AVAssetTrack; var duration: Double; var sourceStart = 0.0 }
 
     public let project: Project
     public let packageURL: URL
@@ -96,11 +97,21 @@ public final class EditorSession {
         self.project = project
         self.packageURL = packageURL
 
+        // Projects recorded by early builds can hold a camera offset on the wrong clock (hundreds of thousands of seconds).
+        // Anything more than two minutes from the screen's start is treated as "starts with the screen".
+        let screenStart = project.sources.first(where: { $0.type == .screen })?.startOffset ?? 0
         func load(_ type: SourceType, _ media: AVMediaType) async throws -> Loaded? {
-            guard let s = project.sources.first(where: { $0.type == type }) else { return nil }
+            guard var s = project.sources.first(where: { $0.type == type }) else { return nil }
+            if abs(s.startOffset - screenStart) > 120 { s.startOffset = screenStart }
             let asset = AVURLAsset(url: ProjectStore.resolve(s, in: packageURL))
             guard let track = try await asset.loadTracks(withMediaType: media).first else { return nil }
-            return Loaded(source: s, asset: asset, track: track, duration: try await asset.load(.duration).seconds)
+            var duration = try await asset.load(.duration).seconds
+            var start = 0.0
+            // Repair: a first sample stamped near 0 followed by real samples days later makes a gigantic, mostly empty file.
+            if media == .video, duration > 3600, let real = EditorSession.firstSampleAfterGap(asset: asset, track: track) {
+                start = real; duration -= real
+            }
+            return Loaded(source: s, asset: asset, track: track, duration: duration, sourceStart: start)
         }
         guard let screen = try await load(.screen, .video) else { throw EditorSessionError.noScreen }
         self.screen = screen
@@ -151,12 +162,28 @@ public final class EditorSession {
             let off = l.source.startOffset - origin
             let srcStart = max(0, ts - off), srcEnd = min(l.duration, te - off)
             guard srcEnd > srcStart else { return dst.trackID }
-            try dst.insertTimeRange(CMTimeRange(start: t(srcStart), end: t(srcEnd)), of: l.track, at: t(max(0, off - ts)))
+            try dst.insertTimeRange(CMTimeRange(start: t(l.sourceStart + srcStart), end: t(l.sourceStart + srcEnd)), of: l.track, at: t(max(0, off - ts)))
             return dst.trackID
         }
         guard let screenID = try insert(screen) else { throw EditorSessionError.noScreen }
         return Timeline(composition: comp, screenID: screenID, cameraID: try insert(camera), micID: try insert(mic),
                         systemID: try insert(system), tauOffset: ts, duration: te - ts)
+    }
+
+    /// Finds the first sample after a gap of more than a minute (compressed samples only, so this is fast).
+    static func firstSampleAfterGap(asset: AVURLAsset, track: AVAssetTrack) -> Double? {
+        guard let reader = try? AVAssetReader(asset: asset) else { return nil }
+        let out = AVAssetReaderTrackOutput(track: track, outputSettings: nil)
+        reader.add(out)
+        guard reader.startReading() else { return nil }
+        var previous: Double?
+        var count = 0
+        while let sb = out.copyNextSampleBuffer(), count < 200 {
+            let pts = CMSampleBufferGetPresentationTimeStamp(sb).seconds
+            if let prev = previous, pts - prev > 60 { reader.cancelReading(); return pts }
+            previous = pts; count += 1
+        }
+        return nil
     }
 
     public func renderer(for edit: EditState, outputHeight: Int, timelineBackground: CIImage? = nil) -> FrameRenderer {

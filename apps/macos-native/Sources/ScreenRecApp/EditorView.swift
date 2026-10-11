@@ -34,13 +34,17 @@ struct EditorView: View {
                     Button("Back to projects", action: onClose).buttonStyle(PrimaryButtonStyle())
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if !model.ready {
-                ProgressView("Loading project…").frame(maxWidth: .infinity, maxHeight: .infinity)
+                VStack(spacing: 12) {
+                    ProgressView().controlSize(.large)
+                    Text("Loading project…").font(.system(size: 14, weight: .medium)).foregroundStyle(Theme.text)
+                    Text("Large recordings can take a few seconds.").font(.system(size: 12)).foregroundStyle(Theme.text2)
+                }.frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 HStack(spacing: 0) {
                     VStack(spacing: 0) {
                         previewTools
                         PreviewArea(model: model).padding(.horizontal, 12)
-                        TransportBar(model: model).padding(.horizontal, 12).padding(.vertical, 6)
+                        TransportBar(model: model, clock: model.clock).padding(.horizontal, 12).padding(.vertical, 6)
                     }
                     InspectorRail(model: model)
                     InspectorHost(model: model).frame(width: 330)
@@ -75,7 +79,6 @@ struct EditorView: View {
         // Keyboard: Space plays, ⌘Z undoes, ⌘E exports, Delete removes the selected event.
         .background {
             Group {
-                Button("") { model.togglePlay() }.keyboardShortcut(.space, modifiers: [])
                 Button("") { model.undo() }.keyboardShortcut("z", modifiers: .command)
                 Button("") { model.redo() }.keyboardShortcut("z", modifiers: [.command, .shift])
                 Button("") { model.showExport = true }.keyboardShortcut("e", modifiers: .command)
@@ -141,9 +144,8 @@ struct PreviewArea: View {
                 PlayerView(player: model.player)
                     .frame(width: fit.width, height: fit.height)
                     .clipShape(RoundedRectangle(cornerRadius: 4))
-                if case .mask(let id) = model.selection, let m = model.edit.maskEvents.first(where: { $0.id == id }),
-                   model.time >= m.start, model.time <= m.end, let r = model.previewRenderer {
-                    MaskOverlay(model: model, mask: m, renderer: r, canvas: canvas, fit: fit.size)
+                if case .mask(let id) = model.selection {
+                    MaskOverlayHost(model: model, clock: model.clock, id: id, canvas: canvas, fit: fit.size)
                         .frame(width: fit.width, height: fit.height)
                 }
             }
@@ -158,6 +160,21 @@ struct PreviewArea: View {
         let s = min(size.width / canvas.width, size.height / canvas.height)
         let w = canvas.width * s, h = canvas.height * s
         return CGRect(x: (size.width - w) / 2, y: (size.height - h) / 2, width: w, height: h)
+    }
+}
+
+/// Builds the (comparatively expensive) renderer once per edit, not once per frame.
+struct MaskOverlayHost: View {
+    @ObservedObject var model: EditorModel
+    @ObservedObject var clock: PlaybackClock
+    let id: UUID
+    let canvas: CGSize
+    let fit: CGSize
+    var body: some View {
+        if let m = model.edit.maskEvents.first(where: { $0.id == id }), clock.time >= m.start, clock.time <= m.end,
+           let r = model.overlayRenderer {
+            MaskOverlay(model: model, mask: m, renderer: r, canvas: canvas, fit: fit)
+        }
     }
 }
 
@@ -211,6 +228,7 @@ struct MaskOverlay: View {
 
 struct TransportBar: View {
     @ObservedObject var model: EditorModel
+    @ObservedObject var clock: PlaybackClock
     @State private var showTrim = false
     var body: some View {
         HStack {
@@ -224,11 +242,11 @@ struct TransportBar: View {
             Spacer()
             IconButton(system: "backward.end", help: "Previous event or trim point") { model.jump(forward: false) }
             Button { model.togglePlay() } label: {
-                Image(systemName: model.isPlaying ? "pause.circle" : "play.circle").font(.system(size: 26, weight: .light))
-            }.buttonStyle(.plain).help("Play / pause (Space)").accessibilityLabel(model.isPlaying ? "Pause" : "Play")
+                Image(systemName: clock.isPlaying ? "pause.circle" : "play.circle").font(.system(size: 26, weight: .light))
+            }.buttonStyle(.plain).help("Play / pause (Space)").accessibilityLabel(clock.isPlaying ? "Pause" : "Play")
             IconButton(system: "forward.end", help: "Next event or trim point") { model.jump(forward: true) }
             Spacer()
-            Text(timeString(model.time - model.trimStart) + " / " + timeString(model.trimEnd - model.trimStart))
+            Text(timeString(clock.time - model.trimStart) + " / " + timeString(model.trimEnd - model.trimStart))
                 .font(.system(size: 12).monospacedDigit()).foregroundStyle(Theme.text3)
             IconButton(system: "scissors", help: "Trim start or end", active: model.edit.trimStart > 0 || model.edit.trimEnd != nil) { showTrim = true }
                 .popover(isPresented: $showTrim) {

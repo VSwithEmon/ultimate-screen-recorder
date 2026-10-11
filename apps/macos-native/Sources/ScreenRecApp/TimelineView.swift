@@ -19,7 +19,7 @@ struct TimelineView: View {
                             eventRow(pps: pps, width: width, zooms: true)
                             eventRow(pps: pps, width: width, zooms: false)
                         }
-                        playhead(pps: pps)
+                        Playhead(model: model, clock: model.clock, pps: pps)
                     }
                     .frame(width: width, alignment: .leading)
                     .padding(.horizontal, 12).padding(.top, 4)
@@ -38,7 +38,9 @@ struct TimelineView: View {
     // MARK: Rows
 
     private func ruler(pps: CGFloat, width: CGFloat) -> some View {
-        let step: Double = pps > 160 ? 1 : (pps > 60 ? 2 : (pps > 25 ? 5 : 10))
+        // Pick the smallest "nice" step that keeps labels >= 56 pt apart and the tick count bounded.
+        let steps: [Double] = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 1800, 3600]
+        let step = steps.first { CGFloat($0) * pps >= 56 && model.duration / $0 <= 120 } ?? steps.last!
         return ZStack(alignment: .topLeading) {
             ForEach(Array(stride(from: 0.0, through: model.duration, by: step)), id: \.self) { t in
                 VStack(spacing: 2) {
@@ -98,18 +100,6 @@ struct TimelineView: View {
         [model.time, model.trimStart, model.trimEnd, 0, model.duration]
             + model.edit.zoomEvents.filter { $0.id != id }.flatMap { [$0.start, $0.end] }
             + model.edit.maskEvents.filter { $0.id != id }.flatMap { [$0.start, $0.end] }
-    }
-
-    private func playhead(pps: CGFloat) -> some View {
-        let x = CGFloat(model.time) * pps + 12
-        return ZStack(alignment: .top) {
-            Rectangle().fill(Theme.blueFocus).frame(width: 2)
-            Circle().fill(Theme.blueFocus).frame(width: 11, height: 11).offset(y: -3)
-        }
-        .frame(width: 14, height: rulerH + clipH + rowH * 2 + 18)
-        .position(x: x, y: (rulerH + clipH + rowH * 2 + 18) / 2 + 2)
-        .gesture(DragGesture().onChanged { v in model.seek(to: Double((v.location.x + x - 7 - 12) / pps)) })
-        .accessibilityLabel("Playhead")
     }
 
     private var insertButton: some View {
@@ -211,5 +201,27 @@ struct WaveShape: Shape {
             p.addRoundedRect(in: CGRect(x: CGFloat(i) * step, y: mid - h / 2, width: max(step * 0.7, 0.8), height: h), cornerSize: CGSize(width: 0.5, height: 0.5))
         }
         return p
+    }
+}
+
+
+/// The only timeline element that redraws every frame during playback.
+struct Playhead: View {
+    @ObservedObject var model: EditorModel
+    @ObservedObject var clock: PlaybackClock
+    let pps: CGFloat
+    private let rulerH: CGFloat = 24, clipH: CGFloat = 40, rowH: CGFloat = 32
+
+    var body: some View {
+        let x = CGFloat(clock.time) * pps + 12
+        let h = rulerH + clipH + rowH * 2 + 18
+        ZStack(alignment: .top) {
+            Rectangle().fill(Theme.blueFocus).frame(width: 2)
+            Circle().fill(Theme.blueFocus).frame(width: 11, height: 11).offset(y: -3)
+        }
+        .frame(width: 14, height: h)
+        .position(x: x, y: h / 2 + 2)
+        .gesture(DragGesture().onChanged { v in model.seek(to: Double((v.location.x + x - 7 - 12) / pps)) })
+        .accessibilityLabel("Playhead")
     }
 }

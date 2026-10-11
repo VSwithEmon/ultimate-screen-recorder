@@ -36,7 +36,7 @@ final class RecorderModel: ObservableObject {
 
     private var session: CaptureSession?
     private var cursorLog: CursorEventLog?
-    private var cursorMonitor: Any?
+    private var cursorTimer: DispatchSourceTimer?
     private var timer: Timer?
     private var projectURL: URL?
     private var project: Project?
@@ -191,30 +191,33 @@ final class RecorderModel: ObservableObject {
         let log = try CursorEventLog(url: url.appendingPathComponent("Metadata/cursor.jsonl"))
         cursorLog = log
         let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
-        let mask: NSEvent.EventTypeMask = [.mouseMoved, .leftMouseDown, .leftMouseUp, .leftMouseDragged,
-                                           .rightMouseDown, .rightMouseUp, .rightMouseDragged]
-        cursorMonitor = NSEvent.addGlobalMonitorForEvents(matching: mask) { event in
+        var lastPoint = CGPoint(x: -1, y: -1)
+        var lastButtons = 0
+        // Poll at 90 Hz: position and button state need no special permission, unlike global event monitors.
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now(), repeating: .milliseconds(11))
+        timer.setEventHandler {
             let global = Geometry.appKitToGlobalTopLeft(NSEvent.mouseLocation, primaryHeight: primaryHeight)
             let n = Geometry.normalized(global, displayFrame: info.displayFrame)
-            let kind: CursorEvent.Kind
-            let button: CursorEvent.Button
-            switch event.type {
-            case .leftMouseDown: (kind, button) = (.down, .left)
-            case .rightMouseDown: (kind, button) = (.down, .right)
-            case .leftMouseUp: (kind, button) = (.up, .left)
-            case .rightMouseUp: (kind, button) = (.up, .right)
-            case .leftMouseDragged: (kind, button) = (.drag, .left)
-            case .rightMouseDragged: (kind, button) = (.drag, .right)
-            default: (kind, button) = (.move, .none)
+            let t = ProcessInfo.processInfo.systemUptime - t0
+            let buttons = NSEvent.pressedMouseButtons
+            let moved = abs(global.x - lastPoint.x) > 0.01 || abs(global.y - lastPoint.y) > 0.01
+            if buttons != lastButtons {
+                for (bit, button) in [(0, CursorEvent.Button.left), (1, .right)] where (buttons ^ lastButtons) & (1 << bit) != 0 {
+                    log.append(CursorEvent(t: t, x: n.x, y: n.y, kind: buttons & (1 << bit) != 0 ? .down : .up, button: button))
+                }
+                lastButtons = buttons
+            } else if moved {
+                log.append(CursorEvent(t: t, x: n.x, y: n.y, kind: buttons != 0 ? .drag : .move, button: buttons & 1 != 0 ? .left : (buttons & 2 != 0 ? .right : .none)))
             }
-            // NSEvent.timestamp is seconds since boot on the same mach clock as CMClockGetHostTimeClock().
-            log.append(CursorEvent(t: event.timestamp - t0, x: n.x, y: n.y, kind: kind, button: button))
+            lastPoint = global
         }
+        timer.resume()
+        cursorTimer = timer
     }
 
     private func stopCursorCapture() {
-        if let m = cursorMonitor { NSEvent.removeMonitor(m) }
-        cursorMonitor = nil
+        cursorTimer?.cancel(); cursorTimer = nil
         cursorLog?.close()
         cursorLog = nil
     }

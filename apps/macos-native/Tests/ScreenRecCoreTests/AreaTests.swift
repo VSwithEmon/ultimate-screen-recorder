@@ -1,3 +1,4 @@
+import AVFoundation
 import XCTest
 @testable import ScreenRecCore
 
@@ -98,5 +99,81 @@ final class AreaSelectionTests: XCTestCase {
         let session = try await EditorSession(project: project, packageURL: url)
         let p = try XCTUnwrap(session.cursor.rawPosition(at: 0.5))
         XCTAssertEqual(p.x, 0, accuracy: 1e-9); XCTAssertEqual(p.y, 0, accuracy: 1e-9)
+    }
+}
+
+final class OffsetSanityTests: XCTestCase {
+    /// Regression: an early build stored the camera start on a different clock (-374,332 s), making a 104-hour timeline.
+    func testAbsurdCameraOffsetDoesNotWreckTheTimeline() async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("offset-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        var (project, url) = try await TestMedia.makeProject(in: dir, seconds: 2, micOffset: 0.1)
+        try FileManager.default.copyItem(at: url.appendingPathComponent("Media/screen.mov"), to: url.appendingPathComponent("Media/camera.mov"))
+        project.sources.append(Source(id: "camera1", type: .camera, path: "Media/camera.mov", startOffset: -374332.384))
+        try ProjectStore.save(project, to: url)
+        let session = try await EditorSession(project: project, packageURL: url)
+        XCTAssertLessThan(session.timelineDuration, 5, "timeline must be about 2 s, not \(session.timelineDuration)")
+        XCTAssertNotNil(session.cameraSize)
+        let tl = try session.makeTimeline()
+        XCTAssertEqual(tl.duration, session.timelineDuration, accuracy: 0.01)
+    }
+}
+
+/// Loads a real project when PROJECT_PATH is set (diagnostics only; prints timing, never pixels).
+final class RealProjectDiagnosticTests: XCTestCase {
+    func testLoadRealProject() async throws {
+        guard let path = ProcessInfo.processInfo.environment["PROJECT_PATH"] else { return }
+        let url = URL(fileURLWithPath: path)
+        let project = try ProjectStore.load(from: url)
+        let t0 = Date()
+        for src in project.sources {
+            let a = AVURLAsset(url: ProjectStore.resolve(src, in: url))
+            let d = try await a.load(.duration).seconds
+            let tr = try await a.load(.tracks).first
+            let range = try await tr?.load(.timeRange)
+            print("DIAG source \(src.type) offset=\(src.startOffset) duration=\(d) trackRange=\(range?.start.seconds ?? -1)..\(range?.end.seconds ?? -1)")
+        }
+        let session = try await EditorSession(project: project, packageURL: url)
+        let loadMs = Int(Date().timeIntervalSince(t0) * 1000)
+        let tl = try session.makeTimeline()
+        print("DIAG load=\(loadMs)ms timelineDuration=\(session.timelineDuration)s trimmed=\(tl.duration)s cursorEvents=\(session.cursor.events.count) camera=\(session.cameraSize != nil) source=\(session.sourceSize)")
+        XCTAssertLessThan(session.timelineDuration, 3600)
+    }
+}
+
+final class StaleFirstFrameTests: XCTestCase {
+    /// A camera file whose first frame is stamped 0 and the rest 4000 s later must be repaired to its real length.
+    func testCameraWithStaleFirstSampleIsRepaired() async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("stale-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        var (project, url) = try await TestMedia.makeProject(in: dir, seconds: 2)
+
+        let cam = url.appendingPathComponent("Media/camera.mov")
+        let writer = try AVAssetWriter(outputURL: cam, fileType: .mov)
+        let input = AVAssetWriterInput(mediaType: .video, outputSettings: [AVVideoCodecKey: AVVideoCodecType.h264, AVVideoWidthKey: 320, AVVideoHeightKey: 240])
+        let adaptor = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput: input, sourcePixelBufferAttributes: [
+            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA, kCVPixelBufferWidthKey as String: 320, kCVPixelBufferHeightKey as String: 240])
+        writer.add(input); writer.startWriting(); writer.startSession(atSourceTime: .zero)
+        func frame(at seconds: Double) async throws {
+            while !input.isReadyForMoreMediaData { try await Task.sleep(nanoseconds: 1_000_000) }
+            var pb: CVPixelBuffer?
+            CVPixelBufferPoolCreatePixelBuffer(nil, adaptor.pixelBufferPool!, &pb)
+            XCTAssertTrue(adaptor.append(pb!, withPresentationTime: CMTime(seconds: seconds, preferredTimescale: 600)))
+        }
+        try await frame(at: 0)                       // stale frame
+        for i in 0..<30 { try await frame(at: 4000 + Double(i) / 30) }   // real frames, ~1 s
+        input.markAsFinished(); await writer.finishWriting()
+        let brokenDuration = try await AVURLAsset(url: cam).load(.duration).seconds
+        XCTAssertGreaterThan(brokenDuration, 3600, "precondition: the broken file is huge")
+
+        project.sources.append(Source(id: "camera1", type: .camera, path: "Media/camera.mov", startOffset: 0))
+        try ProjectStore.save(project, to: url)
+        let session = try await EditorSession(project: project, packageURL: url)
+        XCTAssertLessThan(session.timelineDuration, 5)
+        let tl = try session.makeTimeline()
+        XCTAssertNotNil(tl.cameraID)
+        XCTAssertLessThan(tl.composition.duration.seconds, 5)
     }
 }

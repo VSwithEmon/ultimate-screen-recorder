@@ -1,6 +1,6 @@
 # Progress
 
-Last updated: 2026-10-11 (v0.2.1: multi-display pickers fixed, WCAG AA pass). Truthful status only; "done" means verified.
+Last updated: 2026-10-11 (v0.3.0: editor hang fixed, after-recording window, app icon). Truthful status only; "done" means verified.
 
 ## PRD v2 phase status
 | # | Phase | Status | Evidence / gap |
@@ -26,6 +26,15 @@ Last updated: 2026-10-11 (v0.2.1: multi-display pickers fixed, WCAG AA pass). Tr
 - Verified (automated, v0.2.0): area geometry (handles, ratio lock, Retina px, clamping, saved areas), cursor mapping into an area region. 51 tests total.
 - **Not verified:** window/area/display picking with a mouse, a real screen recording on your Mac (permissions), mic/screen sync on real hardware, camera capture, drag interactions with a mouse (resize/move events), export via the Save dialog, 4K60 performance.
 - Not built: Windows (all), window/area capture, pause, captions/Whisper, noise reduction, music, shortcut overlays, installers/DMG, signing.
+
+## v0.3.0 fixes (from real use)
+- **Editor hang after recording (root cause):** the camera file's first frame carried a stale timestamp near zero, so the file was ~374,000 s long and the editor built a 104-hour timeline. Fixed at capture (implausible device timestamps are dropped; every file now ends at the true stop time, which also stops static screens being cut short) and on load (older recordings are repaired by skipping the stale frame). Regression tests added; verified on the user's real recordings (4.6 s / 60.6 s / 22.9 s timelines).
+- **Cursor log was nearly empty:** global event monitors are unreliable; now polled at 90 Hz with no special permission.
+- Playback no longer redraws the whole editor 30 times a second (playhead and time label only).
+- Loading screen text was nearly invisible; fixed.
+- Recorder windows (timer, preview, notes, toolbar) are created before capture starts, hidden from screen sharing and excluded as an app, so they cannot appear in a recording.
+- New after-recording window: Open in editor, Restart recording (moves the take to the Trash and starts again with the same settings), Discard, Close. It appears after capture has stopped.
+- App icon added (from the supplied logo) to the app, DMG contents and site.
 
 ## Accessibility (WCAG 2.1 AA)
 - App and site colour tokens re-tuned and measured: all text pairs >= 4.5:1 on every surface, control borders >= 3:1, white-on-fill text >= 4.5:1. The app enforces this with `AccessibilityTests` (contrast of every token pair), so a colour change that breaks AA fails the build.

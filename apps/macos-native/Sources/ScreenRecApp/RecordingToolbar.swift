@@ -62,7 +62,7 @@ struct RecordingToolbarView: View {
                 Text(m.title).font(.system(size: 12, weight: .medium))
             }
             .frame(width: 62, height: 52)
-            .foregroundStyle(enabled ? (selected ? Theme.text : Theme.text2) : Theme.text3.opacity(0.75))
+            .foregroundStyle(enabled ? (selected ? Theme.text : Theme.text2) : Theme.text3)
             .background(selected ? Theme.hover : Color.clear, in: RoundedRectangle(cornerRadius: 10))
         }
         .buttonStyle(.plain).disabled(!enabled)
@@ -171,8 +171,6 @@ struct RecordingToolbarView: View {
             toggle("Hide Dock icon while recording", $settings.hideDockIcon)
             toggle("Highlight recorded area during recording", $settings.highlightArea)
             Divider()
-            toggle("Open the editor after recording", $settings.openEditorAfter)
-            Divider()
             Button(coordinator.notesVisible ? "Hide speaker notes" : "Show speaker notes") { coordinator.toggleNotes() }.keyboardShortcut("/", modifiers: [.command, .option])
             Menu("Recording countdown") {
                 ForEach([0, 3, 5, 10], id: \.self) { n in
@@ -236,6 +234,10 @@ final class RecordingCoordinator: ObservableObject {
     private var area: (displayID: CGDirectDisplayID, selection: AreaSelection)?
     private let areaOwner = AreaOwner()
     private var countdownTask: Task<Void, Never>?
+    private var afterPanel: OverlayPanel?
+    private var lastTarget: CaptureTarget?
+    private var lastScreen: NSScreen?
+    var onOpenProject: ((URL) -> Void)?
 
     init(recorder: RecorderModel) { self.recorder = recorder }
 
@@ -262,7 +264,7 @@ final class RecordingCoordinator: ObservableObject {
         panel.contentView = host
         panel.isOpaque = false; panel.backgroundColor = .clear; panel.hasShadow = false
         panel.level = NSWindow.Level(rawValue: NSWindow.Level.screenSaver.rawValue + 1)
-        panel.hidesOnDeactivate = false
+        panel.hidesOnDeactivate = false; panel.sharingType = .none
         panel.isMovableByWindowBackground = true
         panel.isReleasedWhenClosed = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
@@ -313,7 +315,7 @@ final class RecordingCoordinator: ObservableObject {
             .shadow(color: .black.opacity(0.4), radius: 12, y: 6)
         p.contentView = NSHostingView(rootView: view)
         p.isOpaque = false; p.backgroundColor = .clear; p.hasShadow = false
-        p.level = .screenSaver; p.isMovableByWindowBackground = true; p.isReleasedWhenClosed = false; p.hidesOnDeactivate = false
+        p.level = .screenSaver; p.isMovableByWindowBackground = true; p.isReleasedWhenClosed = false; p.hidesOnDeactivate = false; p.sharingType = .none
         p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         p.setFrameOrigin(NSPoint(x: screen.frame.maxX - size.width - 40, y: screen.frame.maxY - size.height - 70))
         p.orderFrontRegardless()
@@ -385,6 +387,7 @@ final class RecordingCoordinator: ObservableObject {
     // MARK: Recording
 
     private func begin(target: CaptureTarget, screen: NSScreen) {
+        lastTarget = target; lastScreen = screen
         errorText = nil
         clearOverlays()
         toolbar?.orderOut(nil)
@@ -415,17 +418,18 @@ final class RecordingCoordinator: ObservableObject {
 
     private func startRecording(target: CaptureTarget, screen: NSScreen) async {
         let options = settings.captureOptions(cameraAllowed: recorder.cameraPermission == .granted, micAllowed: recorder.micPermission == .granted)
-        if settings.hideDockIcon { NSApp.setActivationPolicy(.accessory) }
+        if settings.hideDockIcon || NSApp.activationPolicy() != .accessory { NSApp.setActivationPolicy(.accessory) }
+        // Recorder windows are created BEFORE capture starts so the capture filter excludes them (it also excludes the whole app).
+        showHUD(on: screen)
+        if settings.highlightArea, case .area(_, let r) = target { showHighlight(rect: r, on: screen) }
         await recorder.start(target: target, options: options)
         if recorder.state == .recording {
-            showHUD(on: screen)
             installStatusItem()
-            if settings.highlightArea, case .area(_, let r) = target { showHighlight(rect: r, on: screen) }
         } else {
-            // Failed to start: restore everything and show the toolbar with the reason.
-            NSApp.setActivationPolicy(.regular)
+            // Failed to start: remove the recording windows and show the toolbar again with the reason.
+            hud?.close(); hud = nil; highlight?.close(); highlight = nil
             if case .failed(let m) = recorder.state { errorText = m }
-            toolbar?.orderFrontRegardless()
+            if toolbar == nil { showToolbar() } else { toolbar?.orderFrontRegardless() }
             refreshDevices()
         }
     }
@@ -434,19 +438,66 @@ final class RecordingCoordinator: ObservableObject {
         Task { await recorder.stop() }
     }
 
-    /// Called by the app once the project has been finalized (or failed).
-    func recordingEnded() {
+    /// Called once the project has been saved. Capture is finished, so the window shown here is never recorded.
+    func recordingFinished(url: URL, elapsed: TimeInterval) {
         hud?.close(); hud = nil
         highlight?.close(); highlight = nil
         removeStatusItem()
         stopPreviews()
         toolbar?.close(); toolbar = nil
         settings.mode = nil
+        let screen = lastScreen ?? NSScreen.main ?? NSScreen.screens[0]
+        let name = (try? ProjectStore.load(from: url).name) ?? url.deletingPathExtension().lastPathComponent
+        let secs = Int(elapsed.rounded())
+        let bytes = Self.folderSize(url)
+        let details = String(format: "%d:%02d", secs / 60, secs % 60) + " · " + ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+
+        NSApp.setActivationPolicy(.accessory)
+        let view = AfterRecordingView(name: name, details: details,
+            onOpen: { [weak self] in self?.closeAfter(); self?.restoreApp(); self?.onOpenProject?(url) },
+            onRestart: { [weak self] in
+                guard let self else { return }
+                self.closeAfter(); self.trash(url)
+                if let t = self.lastTarget, let s = self.lastScreen { self.begin(target: t, screen: s) } else { self.restoreApp() }
+            },
+            onDiscard: { [weak self] in self?.closeAfter(); self?.trash(url); self?.restoreApp() },
+            onClose: { [weak self] in self?.closeAfter(); self?.restoreApp() })
+        let host = FirstMouseHostingView(rootView: view)
+        let size = host.fittingSize
+        let p = OverlayPanel(contentRect: NSRect(origin: .zero, size: size), styleMask: [.borderless], backing: .buffered, defer: false)
+        p.contentView = host
+        p.isOpaque = false; p.backgroundColor = .clear; p.hasShadow = true
+        p.level = NSWindow.Level(rawValue: NSWindow.Level.screenSaver.rawValue + 3)
+        p.hidesOnDeactivate = false; p.sharingType = .none; p.isReleasedWhenClosed = false
+        p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        p.setFrameOrigin(NSPoint(x: screen.frame.midX - size.width / 2, y: screen.frame.midY - size.height / 2))
+        p.onEscape = { [weak self] in self?.closeAfter(); self?.restoreApp() }
+        NSApp.activate(ignoringOtherApps: true)
+        p.makeKeyAndOrderFront(nil)
+        afterPanel = p
+    }
+
+    private func closeAfter() { afterPanel?.close(); afterPanel = nil }
+
+    private func trash(_ url: URL) {
+        do { try FileManager.default.trashItem(at: url, resultingItemURL: nil) }
+        catch { errorText = "Could not move the recording to the Trash: \(error.localizedDescription)" }
+    }
+
+    /// Back to the normal app: Dock icon, main window.
+    private func restoreApp() {
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
+        if hiddenWindows.isEmpty { hiddenWindows = NSApp.windows.filter { !($0 is NSPanel) } }
         hiddenWindows.forEach { $0.makeKeyAndOrderFront(nil) }
         hiddenWindows = []
-        if hiddenWindows.isEmpty { NSApp.windows.first { !($0 is NSPanel) }?.makeKeyAndOrderFront(nil) }
+    }
+
+    private static func folderSize(_ url: URL) -> Int64 {
+        let e = FileManager.default.enumerator(at: url, includingPropertiesForKeys: [.fileSizeKey])
+        var total: Int64 = 0
+        while let f = e?.nextObject() as? URL { total += Int64((try? f.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0) }
+        return total
     }
 
     private func showHUD(on screen: NSScreen) {
@@ -455,9 +506,9 @@ final class RecordingCoordinator: ObservableObject {
         let p = NSPanel(contentRect: NSRect(origin: .zero, size: size), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         p.contentView = host
         p.isOpaque = false; p.backgroundColor = .clear; p.hasShadow = false; p.level = NSWindow.Level(rawValue: NSWindow.Level.screenSaver.rawValue + 1); p.isReleasedWhenClosed = false; p.hidesOnDeactivate = false
-        p.isMovableByWindowBackground = true
+        p.isMovableByWindowBackground = true; p.sharingType = .none
         p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        p.setFrameOrigin(NSPoint(x: screen.frame.midX - size.width / 2, y: screen.frame.minY + 40))
+        p.setFrameOrigin(NSPoint(x: screen.frame.midX - size.width / 2, y: screen.visibleFrame.minY + 24))
         p.orderFrontRegardless()
         hud = p
     }
