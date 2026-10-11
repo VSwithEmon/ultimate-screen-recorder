@@ -58,6 +58,7 @@ struct EditorView: View {
         .foregroundStyle(Theme.text)
         .sheet(isPresented: $model.showCrop) { CropSheet(model: model) }
         .sheet(isPresented: $model.showExport) { ExportSheet(model: model) }
+        .sheet(isPresented: $model.showShare) { ShareSheet(model: model) }
         .alert("Move this project to the Trash?", isPresented: $confirmDelete) {
             Button("Move to Trash", role: .destructive) { if model.moveProjectToTrash() { onClose() } }
             Button("Cancel", role: .cancel) {}
@@ -104,6 +105,8 @@ struct EditorView: View {
                 Button("Reset look to defaults") { model.resetStyle() }
             } label: { Label("Presets", systemImage: "sparkles").font(.system(size: 12, weight: .medium)) }
                 .menuStyle(.borderlessButton).fixedSize().padding(.horizontal, 8)
+            Button { model.showShare = true } label: { Label("Share link", systemImage: "link") }
+                .buttonStyle(QuietButtonStyle()).help("Upload and get a link you can send (optional)")
             Button { model.showExport = true } label: { Label("Export", systemImage: "square.and.arrow.up") }
                 .buttonStyle(PrimaryButtonStyle()).keyboardShortcut("e", modifiers: .command)
         }

@@ -2,7 +2,7 @@
 # Builds ScreenRec.app (release) from the SwiftPM package and ad-hoc signs it.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-VERSION="${VERSION:-0.3.1}"
+VERSION="${VERSION:-0.4.0}"
 swift build -c release
 BIN="$(swift build -c release --show-bin-path)/ScreenRecApp"
 NAME="Ultimate Screen Recording"

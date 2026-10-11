@@ -1,6 +1,6 @@
 # Progress
 
-Last updated: 2026-10-11 (v0.3.1: Restart on the timer, readable toolbar in light mode). Truthful status only; "done" means verified.
+Last updated: 2026-10-11 (v0.4.0: optional share links). Truthful status only; "done" means verified.
 
 ## PRD v2 phase status
 | # | Phase | Status | Evidence / gap |
@@ -35,6 +35,13 @@ Last updated: 2026-10-11 (v0.3.1: Restart on the timer, readable toolbar in ligh
 - Recorder windows (timer, preview, notes, toolbar) are created before capture starts, hidden from screen sharing and excluded as an app, so they cannot appear in a recording.
 - New after-recording window: Open in editor, Restart recording (moves the take to the Trash and starts again with the same settings), Discard, Close. It appears after capture has stopped.
 - App icon added (from the supplied logo) to the app, DMG contents and site.
+
+## v0.4.0: optional share links (EXPERIMENTAL, live hosts unverified)
+- "Get shareable link" in the after-recording window and "Share link" in the editor: exports 1080p (falls back to 720p/480p to fit the host's limit) to a temp MP4, uploads it, copies the link, deletes the temp file. Opt-in only: a consent checkbox is required and nothing is uploaded otherwise.
+- Hosts: Litterbox (24 h / 72 h expiring, up to 1 GB) and Catbox (permanent, up to 200 MB). Free, no account. They are third parties we don't control: links are public to anyone who has them, and files can be removed.
+- **Verified:** multipart body (fields + exact file bytes), https-only link parsing, size limits checked before anything is sent, error handling, full export-then-upload flow with a stub uploader (70 tests, no network).
+- **NOT verified:** the live Litterbox/Catbox APIs. The environment blocked probing third-party upload hosts, so the request format follows each service's public documentation and has not been run against the real servers. The first real upload will confirm or fail visibly ("Couldn't create a link"; nothing is shared and the recording is untouched).
+- Not built: your own storage (S3/Cloudflare R2), password-protected or view-limited links, analytics. A private link host would need a server and an account; ask if you want that.
 
 ## v0.3.1
 - Restart button on the recording timer (two-step: first click arms "Discard & restart?"); stops, trashes the take and starts again with the same target and settings.

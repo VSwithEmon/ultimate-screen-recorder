@@ -382,12 +382,27 @@ struct SpeakerNotesView: View {
 struct AfterRecordingView: View {
     let name: String
     let details: String
+    let projectURL: URL
     let onOpen: () -> Void
     let onRestart: () -> Void
     let onDiscard: () -> Void
     let onClose: () -> Void
+    @StateObject private var flow = ShareFlow()
+    @State private var sharing = false
 
     var body: some View {
+        Group {
+            if sharing {
+                ShareLinkView(flow: flow, projectURL: projectURL, edit: nil, onDone: { sharing = false })
+            } else { summary }
+        }
+        .padding(24).frame(width: 360, height: 520, alignment: .top)
+        .background(Theme.panel, in: RoundedRectangle(cornerRadius: 18))
+        .overlay(RoundedRectangle(cornerRadius: 18).stroke(Theme.control))
+        .padding(30)
+    }
+
+    private var summary: some View {
         VStack(spacing: 14) {
             Image(systemName: "checkmark.circle.fill").font(.system(size: 36)).foregroundStyle(Theme.ok)
             Text("Recording saved").font(.system(size: 20, weight: .bold)).foregroundStyle(Theme.text)
@@ -397,18 +412,17 @@ struct AfterRecordingView: View {
             }
             Button(action: onOpen) { Label("Open in editor", systemImage: "slider.horizontal.below.rectangle").frame(maxWidth: .infinity) }
                 .buttonStyle(PrimaryButtonStyle()).keyboardShortcut(.defaultAction)
+            Button { sharing = true } label: { Label("Get shareable link", systemImage: "link").frame(maxWidth: .infinity) }
+                .buttonStyle(QuietButtonStyle()).overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.control))
             Button(action: onRestart) { Label("Restart recording", systemImage: "arrow.counterclockwise").frame(maxWidth: .infinity) }
                 .buttonStyle(QuietButtonStyle()).overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.control))
-            Text("Restart discards this take (it goes to the Trash) and starts a new one with the same settings.")
+            Text("Restart discards this take (it goes to the Trash) and starts a new one with the same settings. Links are optional: nothing is uploaded unless you create one.")
                 .font(.system(size: 12)).foregroundStyle(Theme.text3).multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
             HStack(spacing: 18) {
                 Button("Discard", action: onDiscard).foregroundStyle(Theme.bad)
                 Button("Close", action: onClose).keyboardShortcut(.cancelAction)
             }.buttonStyle(.plain).font(.system(size: 13, weight: .semibold))
         }
-        .padding(24).frame(width: 340)
-        .background(Theme.panel, in: RoundedRectangle(cornerRadius: 18))
-        .overlay(RoundedRectangle(cornerRadius: 18).stroke(Theme.control))
-        .padding(30)
     }
 }

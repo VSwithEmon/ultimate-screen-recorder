@@ -61,6 +61,8 @@ final class EditorModel: ObservableObject {
     @Published var timelineScale = 1.0
     @Published var showCrop = false
     @Published var showExport = false
+    @Published var showShare = false
+    let share = ShareFlow()
     @Published var exportProgress: Double?
     @Published var exportMessage: String?
     @Published private(set) var presets: [Preset] = []

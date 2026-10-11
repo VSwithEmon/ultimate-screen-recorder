@@ -470,7 +470,7 @@ final class RecordingCoordinator: ObservableObject {
         let details = String(format: "%d:%02d", secs / 60, secs % 60) + " · " + ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
 
         NSApp.setActivationPolicy(.accessory)
-        let view = AfterRecordingView(name: name, details: details,
+        let view = AfterRecordingView(name: name, details: details, projectURL: url,
             onOpen: { [weak self] in self?.closeAfter(); self?.restoreApp(); self?.onOpenProject?(url) },
             onRestart: { [weak self] in
                 guard let self else { return }
