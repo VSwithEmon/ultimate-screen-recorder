@@ -1,6 +1,6 @@
 # Progress
 
-Last updated: 2026-10-11 (v0.3.0: editor hang fixed, after-recording window, app icon). Truthful status only; "done" means verified.
+Last updated: 2026-10-11 (v0.3.1: Restart on the timer, readable toolbar in light mode). Truthful status only; "done" means verified.
 
 ## PRD v2 phase status
 | # | Phase | Status | Evidence / gap |
@@ -35,6 +35,12 @@ Last updated: 2026-10-11 (v0.3.0: editor hang fixed, after-recording window, app
 - Recorder windows (timer, preview, notes, toolbar) are created before capture starts, hidden from screen sharing and excluded as an app, so they cannot appear in a recording.
 - New after-recording window: Open in editor, Restart recording (moves the take to the Trash and starts again with the same settings), Discard, Close. It appears after capture has stopped.
 - App icon added (from the supplied logo) to the app, DMG contents and site.
+
+## v0.3.1
+- Restart button on the recording timer (two-step: first click arms "Discard & restart?"); stops, trashes the take and starts again with the same target and settings.
+- Toolbar labels were dark-on-dark when macOS was in light appearance (panels followed the system appearance). All recorder panels and their menus are now forced to dark appearance; text and icon colours lightened further (still AA-tested).
+- Toolbar and pickers can be screenshotted again (only windows that are on screen during recording stay hidden from capture).
+- New Record menu (Open Recorder ⇧⌘R, Stop Recording ⇧⌘.) works from anywhere.
 
 ## Accessibility (WCAG 2.1 AA)
 - App and site colour tokens re-tuned and measured: all text pairs >= 4.5:1 on every surface, control borders >= 3:1, white-on-fill text >= 4.5:1. The app enforces this with `AccessibilityTests` (contrast of every token pair), so a colour change that breaks AA fails the build.

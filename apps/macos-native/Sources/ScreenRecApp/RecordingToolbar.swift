@@ -62,7 +62,7 @@ struct RecordingToolbarView: View {
                 Text(m.title).font(.system(size: 12, weight: .medium))
             }
             .frame(width: 62, height: 52)
-            .foregroundStyle(enabled ? (selected ? Theme.text : Theme.text2) : Theme.text3)
+            .foregroundStyle(enabled ? Theme.text : Theme.text3)
             .background(selected ? Theme.hover : Color.clear, in: RoundedRectangle(cornerRadius: 10))
         }
         .buttonStyle(.plain).disabled(!enabled)
@@ -192,7 +192,7 @@ struct RecordingToolbarView: View {
             Button("Reveal recordings folder") { NSWorkspace.shared.open(recorder.projectsDirectory) }
         } label: {
             HStack(spacing: 4) { Image(systemName: "gearshape").font(.system(size: 18)); Image(systemName: "chevron.down").font(.system(size: 9, weight: .bold)) }
-                .foregroundStyle(Theme.text2).frame(width: 52, height: 52)
+                .foregroundStyle(Theme.text).frame(width: 52, height: 52)
         }
         .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
         .help("Recording settings")
@@ -235,6 +235,7 @@ final class RecordingCoordinator: ObservableObject {
     private let areaOwner = AreaOwner()
     private var countdownTask: Task<Void, Never>?
     private var afterPanel: OverlayPanel?
+    private var restartPending = false
     private var lastTarget: CaptureTarget?
     private var lastScreen: NSScreen?
     var onOpenProject: ((URL) -> Void)?
@@ -257,14 +258,15 @@ final class RecordingCoordinator: ObservableObject {
 
         let mouse = NSEvent.mouseLocation
         let screen = NSScreen.screens.first { $0.frame.contains(mouse) } ?? NSScreen.main ?? NSScreen.screens[0]
-        let host = FirstMouseHostingView(rootView: RecordingToolbarView(coordinator: self, settings: settings, meter: meter, recorder: recorder))
+        let host = FirstMouseHostingView(rootView: RecordingToolbarView(coordinator: self, settings: settings, meter: meter, recorder: recorder).recorderPanelStyle())
         host.setFrameSize(host.fittingSize)
         let size = host.fittingSize
         let panel = OverlayPanel(contentRect: NSRect(origin: .zero, size: size), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.contentView = host
+        panel.forceDarkAppearance()
         panel.isOpaque = false; panel.backgroundColor = .clear; panel.hasShadow = false
         panel.level = NSWindow.Level(rawValue: NSWindow.Level.screenSaver.rawValue + 1)
-        panel.hidesOnDeactivate = false; panel.sharingType = .none
+        panel.hidesOnDeactivate = false
         panel.isMovableByWindowBackground = true
         panel.isReleasedWhenClosed = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
@@ -344,7 +346,7 @@ final class RecordingCoordinator: ObservableObject {
 
     private func addOverlay<V: View>(_ view: V, screen: NSScreen) {
         let p = makeOverlayPanel(for: screen)
-        p.contentView = FirstMouseHostingView(rootView: view)
+        p.contentView = FirstMouseHostingView(rootView: view.recorderPanelStyle())
         p.onEscape = { [weak self] in self?.settings.mode = nil; self?.clearOverlays() }
         p.orderFrontRegardless()
         overlays.append(p)
@@ -409,7 +411,7 @@ final class RecordingCoordinator: ObservableObject {
 
     private func showCountdown(_ n: Int, on screen: NSScreen) {
         hideCountdown()
-        let p = makeOverlayPanel(for: screen, level: NSWindow.Level(rawValue: NSWindow.Level.screenSaver.rawValue + 2), key: false, ignoresMouse: true)
+        let p = makeOverlayPanel(for: screen, level: NSWindow.Level(rawValue: NSWindow.Level.screenSaver.rawValue + 2), key: false, ignoresMouse: true, hiddenFromCapture: true)
         p.contentView = NSHostingView(rootView: CountdownView(value: n))
         p.orderFrontRegardless()
         countdownPanels = [p]
@@ -438,11 +440,26 @@ final class RecordingCoordinator: ObservableObject {
         Task { await recorder.stop() }
     }
 
+    /// Stops this take, moves it to the Trash and starts a new one with the same target and settings.
+    func restartRecording() {
+        guard recorder.state == .recording, lastTarget != nil, lastScreen != nil else { return }
+        restartPending = true
+        Task { await recorder.stop() }
+    }
+
     /// Called once the project has been saved. Capture is finished, so the window shown here is never recorded.
     func recordingFinished(url: URL, elapsed: TimeInterval) {
         hud?.close(); hud = nil
         highlight?.close(); highlight = nil
         removeStatusItem()
+        if restartPending, let t = lastTarget, let s = lastScreen {
+            // Restart: discard this take quietly (no after-recording window) and begin again.
+            restartPending = false
+            trash(url)
+            begin(target: t, screen: s)
+            return
+        }
+        restartPending = false
         stopPreviews()
         toolbar?.close(); toolbar = nil
         settings.mode = nil
@@ -462,13 +479,13 @@ final class RecordingCoordinator: ObservableObject {
             },
             onDiscard: { [weak self] in self?.closeAfter(); self?.trash(url); self?.restoreApp() },
             onClose: { [weak self] in self?.closeAfter(); self?.restoreApp() })
-        let host = FirstMouseHostingView(rootView: view)
+        let host = FirstMouseHostingView(rootView: view.recorderPanelStyle())
         let size = host.fittingSize
         let p = OverlayPanel(contentRect: NSRect(origin: .zero, size: size), styleMask: [.borderless], backing: .buffered, defer: false)
         p.contentView = host
         p.isOpaque = false; p.backgroundColor = .clear; p.hasShadow = true
         p.level = NSWindow.Level(rawValue: NSWindow.Level.screenSaver.rawValue + 3)
-        p.hidesOnDeactivate = false; p.sharingType = .none; p.isReleasedWhenClosed = false
+        p.hidesOnDeactivate = false; p.isReleasedWhenClosed = false
         p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         p.setFrameOrigin(NSPoint(x: screen.frame.midX - size.width / 2, y: screen.frame.midY - size.height / 2))
         p.onEscape = { [weak self] in self?.closeAfter(); self?.restoreApp() }
@@ -501,10 +518,10 @@ final class RecordingCoordinator: ObservableObject {
     }
 
     private func showHUD(on screen: NSScreen) {
-        let host = NSHostingView(rootView: RecordingHUDView(recorder: recorder) { [weak self] in self?.stopRecording() })
+        let host = NSHostingView(rootView: RecordingHUDView(recorder: recorder, onRestart: { [weak self] in self?.restartRecording() }, onStop: { [weak self] in self?.stopRecording() }).recorderPanelStyle())
         let size = host.fittingSize
         let p = NSPanel(contentRect: NSRect(origin: .zero, size: size), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-        p.contentView = host
+        p.contentView = host; p.forceDarkAppearance()
         p.isOpaque = false; p.backgroundColor = .clear; p.hasShadow = false; p.level = NSWindow.Level(rawValue: NSWindow.Level.screenSaver.rawValue + 1); p.isReleasedWhenClosed = false; p.hidesOnDeactivate = false
         p.isMovableByWindowBackground = true; p.sharingType = .none
         p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
@@ -514,7 +531,7 @@ final class RecordingCoordinator: ObservableObject {
     }
 
     private func showHighlight(rect: CGRect, on screen: NSScreen) {
-        let p = makeOverlayPanel(for: screen, level: .statusBar, key: false, ignoresMouse: true)
+        let p = makeOverlayPanel(for: screen, level: .statusBar, key: false, ignoresMouse: true, hiddenFromCapture: true)
         let r = rect
         p.contentView = NSHostingView(rootView: Rectangle().stroke(Theme.blueBright, style: StrokeStyle(lineWidth: 2, dash: [8, 5]))
             .frame(width: r.width + 4, height: r.height + 4).position(x: r.midX, y: r.midY).ignoresSafeArea())
@@ -538,7 +555,7 @@ final class RecordingCoordinator: ObservableObject {
         if let notes { notes.close(); self.notes = nil; notesVisible = false; return }
         let p = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 360, height: 260), styleMask: [.titled, .closable, .resizable, .utilityWindow], backing: .buffered, defer: false)
         p.title = "Speaker notes"
-        p.contentView = NSHostingView(rootView: SpeakerNotesView(settings: settings))
+        p.contentView = NSHostingView(rootView: SpeakerNotesView(settings: settings).recorderPanelStyle()); p.forceDarkAppearance()
         p.level = .floating
         p.sharingType = .none     // excluded from screenshots and screen sharing
         p.isReleasedWhenClosed = false

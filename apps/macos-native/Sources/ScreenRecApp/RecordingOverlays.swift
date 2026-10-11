@@ -27,11 +27,12 @@ extension NSScreen {
     var cgBounds: CGRect { CGDisplayBounds(displayID) }
 }
 
-func makeOverlayPanel(for screen: NSScreen, level: NSWindow.Level = .screenSaver, key: Bool = true, ignoresMouse: Bool = false) -> OverlayPanel {
+func makeOverlayPanel(for screen: NSScreen, level: NSWindow.Level = .screenSaver, key: Bool = true, ignoresMouse: Bool = false, hiddenFromCapture: Bool = false) -> OverlayPanel {
     let p = OverlayPanel(contentRect: screen.frame, styleMask: [.borderless], backing: .buffered, defer: false)
     p.level = level
     p.hidesOnDeactivate = false          // NSPanel hides itself when the app deactivates by default
-    p.sharingType = .none                // never part of screenshots or screen sharing
+    p.sharingType = hiddenFromCapture ? .none : .readOnly   // pickers close before capture; only windows on screen during recording hide
+    p.forceDarkAppearance()
     p.becomesKeyOnlyIfNeeded = false
     p.isOpaque = false
     p.backgroundColor = .clear
@@ -335,14 +336,30 @@ struct CountdownView: View {
 
 struct RecordingHUDView: View {
     @ObservedObject var recorder: RecorderModel
+    let onRestart: () -> Void
     let onStop: () -> Void
+    /// Restart throws the current take away, so the first click only arms it.
+    @State private var armed = false
+
     var body: some View {
         HStack(spacing: 12) {
-            Circle().fill(Theme.bad).frame(width: 10, height: 10)
-            Text(String(format: "%02d:%02d", Int(recorder.elapsed) / 60, Int(recorder.elapsed) % 60)).font(.system(size: 15, weight: .semibold).monospacedDigit())
-            Button(action: onStop) { Label("Stop", systemImage: "stop.fill") }.buttonStyle(PrimaryButtonStyle()).tint(.red)
+            Circle().fill(Theme.bad).frame(width: 10, height: 10).accessibilityHidden(true)
+            Text(String(format: "%02d:%02d", Int(recorder.elapsed) / 60, Int(recorder.elapsed) % 60))
+                .font(.system(size: 15, weight: .semibold).monospacedDigit()).foregroundStyle(Theme.text)
+            Button {
+                if armed { armed = false; onRestart() } else {
+                    armed = true
+                    Task { try? await Task.sleep(nanoseconds: 3_500_000_000); armed = false }
+                }
+            } label: {
+                Label(armed ? "Discard & restart?" : "Restart", systemImage: "arrow.counterclockwise")
+            }
+            .buttonStyle(QuietButtonStyle(selected: armed))
+            .foregroundStyle(armed ? Theme.bad : Theme.text)
+            .help("Discard this take and start again with the same settings")
+            Button(action: onStop) { Label("Stop", systemImage: "stop.fill") }.buttonStyle(PrimaryButtonStyle())
         }
-        .padding(.horizontal, 16).frame(height: 48).foregroundStyle(Theme.text)
+        .padding(.horizontal, 14).frame(height: 48)
         .background(Theme.bar, in: Capsule()).overlay(Capsule().stroke(Theme.control))
         .shadow(color: .black.opacity(0.4), radius: 14, y: 6)
     }

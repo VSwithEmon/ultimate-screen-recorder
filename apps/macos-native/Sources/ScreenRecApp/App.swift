@@ -25,6 +25,10 @@ struct UltimateScreenRecordingApp: App {
                 Button("Undo") { app.editor?.undo() }.keyboardShortcut("z", modifiers: .command).disabled(!(app.editor?.canUndo ?? false))
                 Button("Redo") { app.editor?.redo() }.keyboardShortcut("z", modifiers: [.command, .shift]).disabled(!(app.editor?.canRedo ?? false))
             }
+            CommandMenu("Record") {
+                Button("Open Recorder") { app.coordinator.showToolbar() }.keyboardShortcut("r", modifiers: [.command, .shift])
+                Button("Stop Recording") { app.coordinator.stopRecording() }.keyboardShortcut(".", modifiers: [.command, .shift])
+            }
             CommandMenu("Playback") {
                 Button("Play / Pause") { app.editor?.togglePlay() }.keyboardShortcut(.space, modifiers: [])
                 Button("Previous Marker") { app.editor?.jump(forward: false) }.keyboardShortcut(.leftArrow, modifiers: [.command])
@@ -141,7 +145,7 @@ struct HomeView: View {
                     ProgressView().controlSize(.small); Text("Saving your recording…").foregroundStyle(Theme.text2)
                 } else {
                     Button { coordinator.showToolbar() } label: { Label("Open recorder", systemImage: "record.circle") }
-                        .buttonStyle(PrimaryButtonStyle()).keyboardShortcut("r", modifiers: [.command, .shift])
+                        .buttonStyle(PrimaryButtonStyle())
                 }
             }
             if case .failed(let m) = model.state {

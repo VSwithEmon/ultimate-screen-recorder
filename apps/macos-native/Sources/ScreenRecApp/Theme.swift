@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 extension Color {
@@ -21,8 +22,8 @@ enum Palette {
     static let blueBright: UInt32 = 0x3B82F6    // borders/indicators only
     static let blueFocus: UInt32 = 0x60A5FA     // accent text
     static let text: UInt32 = 0xF5F7FB
-    static let text2: UInt32 = 0xC0C8D6
-    static let text3: UInt32 = 0x9AA5B8
+    static let text2: UInt32 = 0xD8DEE9
+    static let text3: UInt32 = 0xB6BFCE
     static let ok: UInt32 = 0x4ADE80
     static let bad: UInt32 = 0xF87171
     static let clip: UInt32 = 0xF59E0B
@@ -87,7 +88,7 @@ struct IconButton: View {
         Button(action: action) {
             Image(systemName: system).font(.system(size: 14, weight: .medium))
                 .frame(width: 30, height: 30)
-                .foregroundStyle(active ? Theme.blueFocus : (disabled ? Theme.text3.opacity(0.75) : Theme.text2))
+                .foregroundStyle(active ? Theme.blueFocus : (disabled ? Theme.text3 : Theme.text))
                 .background(active ? Theme.blueTint : (hover && !disabled ? Theme.hover : Color.clear), in: RoundedRectangle(cornerRadius: 8))
         }
         .buttonStyle(.plain).disabled(disabled).help(help).onHover { hover = $0 }
@@ -172,4 +173,14 @@ struct Panel<Content: View>: View {
         ScrollView { VStack(alignment: .leading, spacing: 0) { content }.padding(16) }
             .background(Theme.panel)
     }
+}
+
+
+extension View {
+    /// Recorder panels float over arbitrary apps and must stay dark in light mode too.
+    func recorderPanelStyle() -> some View { self.environment(\.colorScheme, .dark).preferredColorScheme(.dark) }
+}
+
+extension NSWindow {
+    func forceDarkAppearance() { appearance = NSAppearance(named: .darkAqua) }
 }

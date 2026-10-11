@@ -26,6 +26,6 @@ final class OverlayRenderTests: XCTestCase {
         try render(AreaPickerView(screen: screen, settings: settings, owner: AreaOwner(), initial: nil, onChange: { _ in }, onStart: { _ in }), size: size, name: "area_empty")
         try render(DisplayPickerView(screen: screen, onStart: {}), size: size, name: "display_picker")
         try render(WindowPickerView(screen: screen, windows: [], onStart: { _ in }), size: size, name: "window_picker")
-        try render(RecordingHUDView(recorder: RecorderModel(), onStop: {}), size: CGSize(width: 260, height: 70), name: "hud")
+        try render(RecordingHUDView(recorder: RecorderModel(), onRestart: {}, onStop: {}), size: CGSize(width: 380, height: 70), name: "hud")
     }
 }
