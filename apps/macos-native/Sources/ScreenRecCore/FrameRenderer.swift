@@ -352,7 +352,7 @@ public final class FrameRenderer {
             out = linear(style.colorA, style.colorB, angle: style.angleDegrees)
         case .wallpaper:
             let def = Wallpapers.all[min(max(style.wallpaperIndex, 0), Wallpapers.all.count - 1)]
-            out = linear(def.base.0, def.base.1, angle: 120)
+            out = linear(def.base.0, def.base.1, angle: def.angle)
             for b in def.blobs {
                 let g = CIFilter.radialGradient()
                 g.center = CGPoint(x: b.x * size.width, y: b.y * size.height)

@@ -2,14 +2,18 @@
 # Builds ScreenRec.app (release) from the SwiftPM package and ad-hoc signs it.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-VERSION="${VERSION:-0.4.1}"
-swift build -c release
-BIN="$(swift build -c release --show-bin-path)/ScreenRecApp"
+VERSION="${VERSION:-0.5.0}"
+# Universal binary: Apple Silicon and Intel Macs.
+swift build -c release --arch arm64 --arch x86_64
+BIN="$(swift build -c release --arch arm64 --arch x86_64 --show-bin-path)/ScreenRecApp"
 NAME="Ultimate Screen Recording"
 APP="build/$NAME.app"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
+mkdir -p "$APP/Contents/Resources/Music"
+cp Resources/Music/*.m4a Resources/Music/music.json "$APP/Contents/Resources/Music/"
+cp ../../LICENSE-MUSIC.md "$APP/Contents/Resources/Music/LICENSE.md"
 cp "$BIN" "$APP/Contents/MacOS/$NAME"
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>

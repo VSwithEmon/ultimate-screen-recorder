@@ -71,6 +71,7 @@ public final class EditorSession {
         public let cameraID: CMPersistentTrackID?
         public let micID: CMPersistentTrackID?
         public let systemID: CMPersistentTrackID?
+        public let musicID: CMPersistentTrackID?
         /// Timeline seconds at composition time 0.
         public let tauOffset: Double
         public let duration: Double
@@ -92,6 +93,8 @@ public final class EditorSession {
     private let camera: Loaded?
     private let mic: Loaded?
     private let system: Loaded?
+    private var music: Loaded?
+    private var musicPath: String?
 
     public init(project: Project, packageURL: URL) async throws {
         self.project = project
@@ -151,8 +154,20 @@ public final class EditorSession {
 
     private func t(_ s: Double) -> CMTime { CMTime(seconds: s, preferredTimescale: 60000) }
 
+    /// Loads the music file named by `settings` (or clears it). Call before `makeTimeline` whenever the music choice changes.
+    public func loadMusic(_ settings: MusicSettings?) async throws {
+        guard let settings else { music = nil; musicPath = nil; return }
+        if musicPath == settings.path, music != nil { return }
+        let asset = AVURLAsset(url: packageURL.appendingPathComponent(settings.path))
+        guard let track = try await asset.loadTracks(withMediaType: .audio).first else { music = nil; musicPath = nil; return }
+        let duration = try await asset.load(.duration).seconds
+        guard duration > 0.5 else { music = nil; musicPath = nil; return }
+        music = Loaded(source: Source(id: "music", type: .systemAudio, path: settings.path, startOffset: 0), asset: asset, track: track, duration: duration)
+        musicPath = settings.path
+    }
+
     /// Builds the (trimmed) timeline. Streams are placed by their recorded start offsets.
-    public func makeTimeline(trimStart: Double = 0, trimEnd: Double? = nil) throws -> Timeline {
+    public func makeTimeline(trimStart: Double = 0, trimEnd: Double? = nil, music settings: MusicSettings? = nil) throws -> Timeline {
         let ts = min(max(trimStart, 0), timelineDuration)
         let te = min(max(trimEnd ?? timelineDuration, ts + 0.1), timelineDuration)
         let comp = AVMutableComposition()
@@ -166,8 +181,24 @@ public final class EditorSession {
             return dst.trackID
         }
         guard let screenID = try insert(screen) else { throw EditorSessionError.noScreen }
-        return Timeline(composition: comp, screenID: screenID, cameraID: try insert(camera), micID: try insert(mic),
-                        systemID: try insert(system), tauOffset: ts, duration: te - ts)
+        let cameraID = try insert(camera), micID = try insert(mic), systemID = try insert(system)
+
+        // Background music: starts with the (trimmed) timeline and loops to cover it.
+        var musicID: CMPersistentTrackID?
+        if let settings, let m = music, musicPath == settings.path,
+           let dst = comp.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid) {
+            let length = te - ts
+            var placed = 0.0
+            while placed < length - 0.01 {
+                let piece = min(m.duration, length - placed)
+                try dst.insertTimeRange(CMTimeRange(start: .zero, duration: t(piece)), of: m.track, at: t(placed))
+                placed += piece
+                if !settings.loop { break }
+            }
+            musicID = dst.trackID
+        }
+        return Timeline(composition: comp, screenID: screenID, cameraID: cameraID, micID: micID,
+                        systemID: systemID, musicID: musicID, tauOffset: ts, duration: te - ts)
     }
 
     /// Finds the first sample after a gap of more than a minute (compressed samples only, so this is fast).
@@ -215,6 +246,19 @@ public final class EditorSession {
         }
         add(timeline.micID, volume: edit.audio.muteMicrophone ? 0 : Float(edit.audio.micGain))
         add(timeline.systemID, volume: Float(edit.audio.systemGain))
+        if let id = timeline.musicID, let track = timeline.composition.track(withTrackID: id), let m = edit.audio.music {
+            let p = AVMutableAudioMixInputParameters(track: track)
+            let gain = Float(min(max(m.gain, 0), 1.5)), total = timeline.duration
+            let fin = min(max(m.fadeIn, 0), total / 2), fout = min(max(m.fadeOut, 0), total / 2)
+            if fin > 0 {
+                p.setVolumeRamp(fromStartVolume: 0, toEndVolume: gain, timeRange: CMTimeRange(start: .zero, duration: t(fin)))
+            } else { p.setVolume(gain, at: .zero) }
+            if fout > 0 {
+                p.setVolume(gain, at: t(fin))
+                p.setVolumeRamp(fromStartVolume: gain, toEndVolume: 0, timeRange: CMTimeRange(start: t(total - fout), duration: t(fout)))
+            }
+            params.append(p)
+        }
         guard !params.isEmpty else { return nil }
         let mix = AVMutableAudioMix()
         mix.inputParameters = params

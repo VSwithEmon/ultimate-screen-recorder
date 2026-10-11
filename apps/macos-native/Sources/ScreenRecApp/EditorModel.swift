@@ -111,6 +111,7 @@ final class EditorModel: ObservableObject {
         do {
             let s = try await EditorSession(project: project, packageURL: url)
             session = s
+            try? await s.loadMusic(edit.audio.music)
             try rebuildTimeline()
             installTimeObserver()
             ready = true
@@ -140,7 +141,7 @@ final class EditorModel: ObservableObject {
     private func rebuildTimeline() throws {
         guard let session else { return }
         let keep = time
-        let tl = try session.makeTimeline(trimStart: edit.trimStart, trimEnd: edit.trimEnd)
+        let tl = try session.makeTimeline(trimStart: edit.trimStart, trimEnd: edit.trimEnd, music: edit.audio.music)
         timeline = tl
         let item = AVPlayerItem(asset: tl.composition)
         item.videoComposition = session.videoComposition(for: tl, edit: edit, outputHeight: previewHeight, fps: 30)
@@ -195,7 +196,15 @@ final class EditorModel: ObservableObject {
         edit = new
         project.edit = new
         if let sel = selection, !selectionExists(sel) { selection = nil }
-        if new.trimStart != before.trimStart || new.trimEnd != before.trimEnd {
+        let musicChanged = new.audio.music?.path != before.audio.music?.path || new.audio.music?.loop != before.audio.music?.loop
+        if musicChanged {
+            // A different music file (or looping on/off) changes the timeline itself, not just the mix.
+            Task { [weak self] in
+                guard let self, let session = self.session else { return }
+                try? await session.loadMusic(new.audio.music)
+                try? self.rebuildTimeline()
+            }
+        } else if new.trimStart != before.trimStart || new.trimEnd != before.trimEnd {
             try? rebuildTimeline()
         } else {
             refreshPreview()
@@ -295,6 +304,37 @@ final class EditorModel: ObservableObject {
             refreshPreview()
         } catch { notice = "Could not import image: \(error.localizedDescription)" }
     }
+
+    // MARK: Music
+
+    /// Copies the track into the project (so the project stays self-contained) and uses it as background music.
+    func useBuiltInMusic(_ track: MusicTrack, library: MusicLibrary = .shared) {
+        guard let src = library.url(for: track) else { notice = "That track isn't available in this build."; return }
+        useMusicFile(src, title: track.title, name: "music-\(track.id).m4a")
+    }
+
+    func importMusic(from source: URL) {
+        let ext = source.pathExtension.isEmpty ? "m4a" : source.pathExtension
+        useMusicFile(source, title: source.deletingPathExtension().lastPathComponent, name: "music-import.\(ext)")
+    }
+
+    private func useMusicFile(_ source: URL, title: String, name: String) {
+        let rel = "Media/\(name)"
+        let dest = url.appendingPathComponent(rel)
+        do {
+            if source.standardizedFileURL != dest.standardizedFileURL {
+                try? FileManager.default.removeItem(at: dest)
+                try FileManager.default.copyItem(at: source, to: dest)
+            }
+            mutate { e in
+                var m = e.audio.music ?? MusicSettings(path: rel, title: title)
+                m.path = rel; m.title = title
+                e.audio.music = m
+            }
+        } catch { notice = "Could not add the music: \(error.localizedDescription)" }
+    }
+
+    func removeMusic() { mutate { $0.audio.music = nil } }
 
     // MARK: Presets
 

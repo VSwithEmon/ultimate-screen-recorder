@@ -18,6 +18,15 @@ struct UltimateScreenRecordingApp: App {
         .windowResizability(.contentMinSize)
         .defaultSize(width: 1360, height: 860)
         .commands {
+            CommandGroup(after: .appInfo) {
+                Button("Check for Updates…") { HelpActions.checkForUpdates() }
+            }
+            CommandGroup(replacing: .help) {
+                Button("Report a Problem…") { HelpActions.reportProblem(recorder: app.recorder) }
+                Button("Copy Diagnostic Info") { HelpActions.copyDiagnostics(recorder: app.recorder) }
+                Divider()
+                Button("Download Page and Install Guide") { NSWorkspace.shared.open(UpdateChecker.downloadPage) }
+            }
             CommandGroup(after: .newItem) {
                 Button("Export…") { app.editor?.showExport = true }.keyboardShortcut("e", modifiers: .command).disabled(app.editor == nil)
             }

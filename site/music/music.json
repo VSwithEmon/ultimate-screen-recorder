@@ -1,0 +1,74 @@
+[
+  {
+    "id": "soft-focus",
+    "title": "Soft Focus",
+    "mood": "Lo-Fi",
+    "bpm": 78,
+    "seconds": 49.2,
+    "file": "soft-focus.m4a",
+    "license": "CC0-1.0"
+  },
+  {
+    "id": "sunny-lo-fi",
+    "title": "Sunny Lo-Fi",
+    "mood": "Lo-Fi",
+    "bpm": 86,
+    "seconds": 44.7,
+    "file": "sunny-lo-fi.m4a",
+    "license": "CC0-1.0"
+  },
+  {
+    "id": "morning-light",
+    "title": "Morning Light",
+    "mood": "Upbeat",
+    "bpm": 112,
+    "seconds": 34.3,
+    "file": "morning-light.m4a",
+    "license": "CC0-1.0"
+  },
+  {
+    "id": "night-drive",
+    "title": "Night Drive",
+    "mood": "Electronic",
+    "bpm": 102,
+    "seconds": 37.6,
+    "file": "night-drive.m4a",
+    "license": "CC0-1.0"
+  },
+  {
+    "id": "open-space",
+    "title": "Open Space",
+    "mood": "Ambient",
+    "bpm": 60,
+    "seconds": 64.0,
+    "file": "open-space.m4a",
+    "license": "CC0-1.0"
+  },
+  {
+    "id": "keynote",
+    "title": "Keynote",
+    "mood": "Commercial",
+    "bpm": 100,
+    "seconds": 38.4,
+    "file": "keynote.m4a",
+    "license": "CC0-1.0"
+  },
+  {
+    "id": "quiet-piano",
+    "title": "Quiet Piano",
+    "mood": "Instrumental",
+    "bpm": 72,
+    "seconds": 53.3,
+    "file": "quiet-piano.m4a",
+    "license": "CC0-1.0"
+  },
+  {
+    "id": "bright-lounge",
+    "title": "Bright Lounge",
+    "mood": "Lounge",
+    "bpm": 104,
+    "seconds": 36.9,
+    "file": "bright-lounge.m4a",
+    "license": "CC0-1.0"
+  }
+]

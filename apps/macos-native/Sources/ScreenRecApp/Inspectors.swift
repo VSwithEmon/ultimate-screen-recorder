@@ -32,22 +32,7 @@ struct CanvasInspector: View {
             }
             switch model.edit.background.kind {
             case .wallpaper:
-                InspectorSection(title: "Wallpaper") {
-                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), spacing: 8) {
-                        ForEach(Wallpapers.all.indices, id: \.self) { i in
-                            let w = Wallpapers.all[i]
-                            Button { model.mutate { $0.background.wallpaperIndex = i } } label: {
-                                RoundedRectangle(cornerRadius: 8)
-                                    .fill(LinearGradient(colors: [rgb(w.base.0), rgb(w.base.1)], startPoint: .topLeading, endPoint: .bottomTrailing))
-                                    .frame(height: 46)
-                                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(model.edit.background.wallpaperIndex == i ? Theme.blueFocus : Theme.control, lineWidth: model.edit.background.wallpaperIndex == i ? 2 : 1))
-                            }.buttonStyle(.plain).help(w.name).accessibilityLabel("\(w.name) wallpaper")
-                        }
-                    }
-                    Button { model.mutate { $0.background.wallpaperIndex = Int.random(in: 0..<Wallpapers.all.count) } } label: {
-                        Label("Pick random wallpaper", systemImage: "wand.and.stars").frame(maxWidth: .infinity)
-                    }.buttonStyle(QuietButtonStyle()).overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.control))
-                }
+                WallpaperPicker(model: model)
                 SliderRow(title: "Background blur", value: Binding(get: { model.edit.background.blur }, set: { v in model.mutate("bg-blur") { $0.background.blur = v } }), defaultValue: 0)
             case .gradient:
                 InspectorSection(title: "Gradient") {
@@ -266,11 +251,14 @@ struct CameraInspector: View {
 
 struct AudioInspector: View {
     @ObservedObject var model: EditorModel
+    @StateObject private var previewer = MusicPreviewer()
+    private let library = MusicLibrary.shared
+
     var body: some View {
         let hasMic = model.project.sources.contains { $0.type == .microphone }
         let hasSys = model.project.sources.contains { $0.type == .systemAudio }
         Panel {
-            if !hasMic && !hasSys { Notice(text: "This project has no audio tracks.") }
+            if !hasMic && !hasSys { Notice(text: "This recording has no audio tracks. You can still add background music.") }
             InspectorSection(title: "Microphone") {
                 ToggleRow(title: "Mute microphone", isOn: Binding(get: { model.edit.audio.muteMicrophone }, set: { v in model.mutate { $0.audio.muteMicrophone = v } }), disabled: !hasMic)
                 SliderRow(title: "Microphone volume", value: Binding(get: { model.edit.audio.micGain }, set: { v in model.mutate("mic-gain") { $0.audio.micGain = v } }),
@@ -280,11 +268,111 @@ struct AudioInspector: View {
                 SliderRow(title: "System audio volume", value: Binding(get: { model.edit.audio.systemGain }, set: { v in model.mutate("sys-gain") { $0.audio.systemGain = v } }),
                           range: 0...2, defaultValue: 1).disabled(!hasSys)
             }
-            Text("Noise reduction, volume normalising and background music are planned for a later phase.").font(.system(size: 12)).foregroundStyle(Theme.text3)
+            Divider().overlay(Theme.line)
+            musicSection
+            Text("Noise reduction is planned for a later phase.").font(.system(size: 12)).foregroundStyle(Theme.text3).padding(.top, 8)
+        }
+        .onDisappear { previewer.stop() }
+    }
+
+    @ViewBuilder private var musicSection: some View {
+        InspectorSection(title: "Background music", subtitle: "Plays under your recording, loops to fill it, and fades in and out.") {
+            if let m = model.edit.audio.music {
+                HStack {
+                    Image(systemName: "music.note").foregroundStyle(Theme.blueFocus)
+                    Text(m.title).font(.system(size: 13, weight: .semibold)).lineLimit(1)
+                    Spacer()
+                    Button("Remove") { model.removeMusic() }.buttonStyle(QuietButtonStyle()).foregroundStyle(Theme.bad)
+                }
+                .padding(10).background(Theme.bar, in: RoundedRectangle(cornerRadius: 8))
+                SliderRow(title: "Music volume", value: Binding(get: { m.gain }, set: { v in model.mutate("music-gain") { $0.audio.music?.gain = v } }), range: 0...1, defaultValue: 0.35)
+                SliderRow(title: "Fade in", value: Binding(get: { m.fadeIn }, set: { v in model.mutate("music-fin") { $0.audio.music?.fadeIn = v } }), range: 0...5, defaultValue: 1, format: { String(format: "%.1fs", $0) })
+                SliderRow(title: "Fade out", value: Binding(get: { m.fadeOut }, set: { v in model.mutate("music-fout") { $0.audio.music?.fadeOut = v } }), range: 0...8, defaultValue: 2, format: { String(format: "%.1fs", $0) })
+                ToggleRow(title: "Loop music", subtitle: "Repeat the track if the recording is longer.", isOn: Binding(get: { m.loop }, set: { v in model.mutate { $0.audio.music?.loop = v } }))
+            }
+            if library.tracks.isEmpty {
+                Notice(text: "Built-in music isn't included in this build. You can still add your own audio file.")
+            } else {
+                ForEach(library.tracks) { t in
+                    HStack(spacing: 8) {
+                        Button { previewer.toggle(t, library: library) } label: {
+                            Image(systemName: previewer.playingID == t.id ? "stop.circle.fill" : "play.circle.fill").font(.system(size: 20))
+                        }.buttonStyle(.plain).foregroundStyle(Theme.blueFocus)
+                        .accessibilityLabel(previewer.playingID == t.id ? "Stop preview of \(t.title)" : "Preview \(t.title)")
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(t.title).font(.system(size: 13, weight: .semibold))
+                            Text("\(t.mood) · \(Int(t.seconds))s").font(.system(size: 12)).foregroundStyle(Theme.text2)
+                        }
+                        Spacer()
+                        let using = model.edit.audio.music?.path == "Media/music-\(t.id).m4a"
+                        Button(using ? "In use" : "Use") { model.useBuiltInMusic(t) }
+                            .buttonStyle(QuietButtonStyle(selected: using)).disabled(using)
+                    }
+                    .padding(.vertical, 3)
+                }
+            }
+            Button { chooseAudio() } label: { Label("Add your own audio file…", systemImage: "square.and.arrow.down").frame(maxWidth: .infinity) }
+                .buttonStyle(QuietButtonStyle()).overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.control)).padding(.top, 4)
+            Text("Built-in music is original and released under CC0 (public domain): free for any use, with no attribution. Only add your own files if you have the rights to use them.")
+                .font(.system(size: 12)).foregroundStyle(Theme.text3).fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func chooseAudio() {
+        let p = NSOpenPanel()
+        p.allowedContentTypes = [.audio]
+        p.allowsMultipleSelection = false
+        if p.runModal() == .OK, let u = p.url { model.importMusic(from: u) }
+    }
+}
+
+struct WallpaperSwatch: View {
+    let def: Wallpapers.Def
+    private static func c(_ x: RGBA, _ a: Double? = nil) -> Color { Color(.sRGB, red: x.r, green: x.g, blue: x.b, opacity: a ?? x.a) }
+    var body: some View {
+        let c: (RGBA, Double?) -> Color = { Self.c($0, $1) }
+        let rad = (def.angle - 90) * .pi / 180
+        let start = UnitPoint(x: 0.5 - 0.5 * cos(rad), y: 0.5 - 0.5 * sin(rad)), end = UnitPoint(x: 0.5 + 0.5 * cos(rad), y: 0.5 + 0.5 * sin(rad))
+        ZStack {
+            LinearGradient(colors: [c(def.base.0, 1), c(def.base.1, 1)], startPoint: start, endPoint: end)
+            ForEach(Array(def.blobs.enumerated()), id: \.offset) { _, b in
+                RadialGradient(colors: [c(b.c, nil), c(b.c, 0)], center: UnitPoint(x: b.x, y: 1 - b.y), startRadius: 0, endRadius: 60 * b.r + 10)
+            }
         }
     }
 }
 
+struct WallpaperPicker: View {
+    @ObservedObject var model: EditorModel
+    @State private var category = Wallpapers.Category.all
+
+    var body: some View {
+        let indices = Wallpapers.all.indices.filter { category == .all || Wallpapers.all[$0].category == category }
+        InspectorSection(title: "Wallpaper") {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 4) {
+                    ForEach(Wallpapers.Category.allCases, id: \.self) { c in
+                        Button(c.rawValue) { category = c }.buttonStyle(QuietButtonStyle(selected: category == c))
+                    }
+                }
+            }
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 4), spacing: 8) {
+                ForEach(indices, id: \.self) { i in
+                    let w = Wallpapers.all[i], on = model.edit.background.wallpaperIndex == i
+                    Button { model.mutate { $0.background.wallpaperIndex = i } } label: {
+                        WallpaperSwatch(def: w).frame(height: 42).clipShape(RoundedRectangle(cornerRadius: 8))
+                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(on ? Theme.blueFocus : Theme.control, lineWidth: on ? 3 : 1))
+                    }.buttonStyle(.plain).help(w.name).accessibilityLabel("\(w.name) wallpaper").accessibilityAddTraits(on ? .isSelected : [])
+                }
+            }
+            Text("\(Wallpapers.all[min(max(model.edit.background.wallpaperIndex, 0), Wallpapers.all.count - 1)].name) · \(indices.count) shown of \(Wallpapers.all.count)")
+                .font(.system(size: 12)).foregroundStyle(Theme.text2)
+            Button { if let i = indices.randomElement() { model.mutate { $0.background.wallpaperIndex = i } } } label: {
+                Label("Pick random wallpaper", systemImage: "wand.and.stars").frame(maxWidth: .infinity)
+            }.buttonStyle(QuietButtonStyle()).overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.control))
+        }
+    }
+}
 struct CaptionsInspector: View {
     var body: some View {
         Panel {

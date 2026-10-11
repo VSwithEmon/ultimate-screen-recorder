@@ -48,7 +48,8 @@ public final class Exporter: @unchecked Sendable {
     public func export(_ job: ExportRequest, progress: @escaping @Sendable (Double) -> Void) async throws {
         guard job.height >= 2, job.fps > 0 else { throw ExportError.invalidDimensions }
         let session = job.session
-        let timeline = try session.makeTimeline(trimStart: job.edit.trimStart, trimEnd: job.edit.trimEnd)
+        try await session.loadMusic(job.edit.audio.music)
+        let timeline = try session.makeTimeline(trimStart: job.edit.trimStart, trimEnd: job.edit.trimEnd, music: job.edit.audio.music)
         let videoComposition = session.videoComposition(for: timeline, edit: job.edit, outputHeight: job.height, fps: job.fps)
         let size = videoComposition.renderSize
         let composition = timeline.composition

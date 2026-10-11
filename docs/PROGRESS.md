@@ -1,6 +1,6 @@
 # Progress
 
-Last updated: 2026-10-11 (v0.4.1: last-5 shared links, expiring links only). Truthful status only; "done" means verified.
+Last updated: 2026-10-11 (v0.5.0: wallpapers, CC0 music, Intel, update checker). Truthful status only; "done" means verified.
 
 ## PRD v2 phase status
 | # | Phase | Status | Evidence / gap |
@@ -35,6 +35,12 @@ Last updated: 2026-10-11 (v0.4.1: last-5 shared links, expiring links only). Tru
 - Recorder windows (timer, preview, notes, toolbar) are created before capture starts, hidden from screen sharing and excluded as an app, so they cannot appear in a recording.
 - New after-recording window: Open in editor, Restart recording (moves the take to the Trash and starts again with the same settings), Discard, Close. It appears after capture has stopped.
 - App icon added (from the supplied logo) to the app, DMG contents and site.
+
+## v0.5.0: wallpapers, music, testers
+- **Wallpapers:** 26 original procedural wallpapers in 7 categories (Blue, Warm, Green & Teal, Dark, Light, Vivid), category chips and a 4-column picker. The first six keep their old positions so existing projects are unchanged. Tests check every wallpaper renders and that no two look alike.
+- **Music:** 8 original loops (Lo-Fi x2, Upbeat, Electronic, Ambient, Commercial, Instrumental, Lounge) synthesised by `tools/generate_music.py` from oscillators and noise, no samples. Released under **CC0** (`LICENSE-MUSIC.md`); hosted on the site for listening/download (`site/music`). In the editor's Audio panel: preview, Use, volume, fade in/out, loop on/off, "Add your own audio file" (user's own rights). The track is copied into the project and mixed by the same engine as export. Tests: looping, trim, fades, export contains the music audio. Objective checks on the audio: consistent loudness (about -22 dB RMS), no clipping, no silent gaps; **not listened to by a human** - judge the taste yourself.
+- **Anyone can test:** universal binary (Apple Silicon + Intel; the Intel half verified running under Rosetta, not on physical Intel hardware), install guide with troubleshooting on the site, `latest.json` + Check for Updates (user-initiated only), Help > Report a Problem / Copy Diagnostic Info (no recordings or personal data), GitHub issue template.
+- Still true for testers: the app is not notarized, so first open needs right-click > Open, and every new build needs the Screen Recording permission re-granted.
 
 ## v0.4.1: shared-links history and retention
 - Home has a **Shared links** tab: the last 5 links (name, expiry countdown, copy/open/remove). Older links drop off the list; expired links disappear. Stored locally in `~/Library/Application Support/Ultimate Screen Recording/share-history.json`.
