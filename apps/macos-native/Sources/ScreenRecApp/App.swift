@@ -109,6 +109,8 @@ struct HomeView: View {
     @EnvironmentObject var model: RecorderModel
     @EnvironmentObject var coordinator: RecordingCoordinator
     @State private var projects: [ProjectItem] = []
+    @State private var tab = 0
+    @ObservedObject private var shares = ShareHistoryStore.shared
 
     var body: some View {
         HStack(spacing: 0) {
@@ -192,17 +194,24 @@ struct HomeView: View {
     private var projectsList: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("Projects").font(.system(size: 16, weight: .bold))
+                Picker("", selection: $tab) {
+                    Text("Projects").tag(0)
+                    Text("Shared links (\(shares.records.count))").tag(1)
+                }.pickerStyle(.segmented).labelsHidden().frame(width: 280)
                 Spacer()
-                Button { let p = NSOpenPanel(); p.canChooseDirectories = true; p.canChooseFiles = true; p.directoryURL = model.projectsDirectory
-                    if p.runModal() == .OK, let u = p.url { app.open(u) } } label: { Label("Open project…", systemImage: "folder") }.buttonStyle(QuietButtonStyle())
+                if tab == 0 {
+                    Button { let p = NSOpenPanel(); p.canChooseDirectories = true; p.canChooseFiles = true; p.directoryURL = model.projectsDirectory
+                        if p.runModal() == .OK, let u = p.url { app.open(u) } } label: { Label("Open project…", systemImage: "folder") }.buttonStyle(QuietButtonStyle())
+                }
             }.padding(20)
             Divider().overlay(Theme.line)
-            if projects.isEmpty {
+            if tab == 1 {
+                SharedLinksList(store: shares)
+            } else if projects.isEmpty {
                 VStack(spacing: 8) {
                     Image(systemName: "film.stack").font(.system(size: 34)).foregroundStyle(Theme.text3)
-                    Text("No projects yet").font(.system(size: 14, weight: .semibold))
-                    Text("Record your screen and it will appear here, ready to edit.").font(.system(size: 12)).foregroundStyle(Theme.text3)
+                    Text("No projects yet").font(.system(size: 14, weight: .semibold)).foregroundStyle(Theme.text)
+                    Text("Record your screen and it will appear here, ready to edit.").font(.system(size: 12)).foregroundStyle(Theme.text2)
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 List(projects) { p in
@@ -210,12 +219,12 @@ struct HomeView: View {
                         HStack {
                             Image(systemName: p.incomplete ? "exclamationmark.triangle" : "film").foregroundStyle(p.incomplete ? Color.orange : Theme.blueFocus).frame(width: 24)
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(p.name).font(.system(size: 13, weight: .medium))
+                                Text(p.name).font(.system(size: 13, weight: .medium)).foregroundStyle(Theme.text)
                                 Text(p.incomplete ? "Recording was interrupted and cannot be opened" : p.date.formatted(date: .abbreviated, time: .shortened))
-                                    .font(.system(size: 12)).foregroundStyle(Theme.text3)
+                                    .font(.system(size: 12)).foregroundStyle(Theme.text2)
                             }
                             Spacer()
-                            if !p.incomplete { Image(systemName: "chevron.right").foregroundStyle(Theme.text3) }
+                            if !p.incomplete { Image(systemName: "chevron.right").foregroundStyle(Theme.text2) }
                         }.contentShape(Rectangle())
                     }.buttonStyle(.plain).listRowBackground(Color.clear)
                 }

@@ -189,6 +189,9 @@ struct RecordingToolbarView: View {
                 toggle("Record the cursor into the video (disables cursor editing)", $settings.bakeCursor)
             }
             Divider()
+            Button { coordinator.setKeepLastFive(!settings.keepLastFive) } label: {
+                if settings.keepLastFive { Label("Keep only my last 5 recordings", systemImage: "checkmark") } else { Text("Keep only my last 5 recordings…") }
+            }
             Button("Reveal recordings folder") { NSWorkspace.shared.open(recorder.projectsDirectory) }
         } label: {
             HStack(spacing: 4) { Image(systemName: "gearshape").font(.system(size: 18)); Image(systemName: "chevron.down").font(.system(size: 9, weight: .bold)) }
@@ -449,6 +452,7 @@ final class RecordingCoordinator: ObservableObject {
 
     /// Called once the project has been saved. Capture is finished, so the window shown here is never recorded.
     func recordingFinished(url: URL, elapsed: TimeInterval) {
+        applyRetentionIfEnabled(protecting: url)
         hud?.close(); hud = nil
         highlight?.close(); highlight = nil
         removeStatusItem()
@@ -492,6 +496,28 @@ final class RecordingCoordinator: ObservableObject {
         NSApp.activate(ignoringOtherApps: true)
         p.makeKeyAndOrderFront(nil)
         afterPanel = p
+    }
+
+    /// Turning the rule on asks first, because it removes files (to the Trash, so they can be restored).
+    func setKeepLastFive(_ on: Bool) {
+        guard on else { settings.keepLastFive = false; return }
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Keep only your last 5 recordings?"
+        alert.informativeText = "After each new recording, older recordings are moved to the Trash automatically. You can restore them from the Trash until you empty it. Shared links are not affected."
+        alert.addButton(withTitle: "Turn on")
+        alert.addButton(withTitle: "Cancel")
+        alert.window.appearance = NSAppearance(named: .darkAqua)
+        if alert.runModal() == .alertFirstButtonReturn {
+            settings.keepLastFive = true
+            applyRetentionIfEnabled(protecting: nil)
+        }
+    }
+
+    private func applyRetentionIfEnabled(protecting url: URL?) {
+        guard settings.keepLastFive else { return }
+        let n = RecordingRetentionRunner.apply(in: recorder.projectsDirectory, protecting: url.map { [$0] } ?? [])
+        if n > 0 { recorder.notice = "Moved \(n) older recording\(n == 1 ? "" : "s") to the Trash (keeping your last 5)." }
     }
 
     private func closeAfter() { afterPanel?.close(); afterPanel = nil }

@@ -21,9 +21,12 @@ final class ShareFlow: ObservableObject {
     private var exporter: Exporter?
     typealias Uploader = @Sendable (URL, ShareProvider, @escaping @Sendable (Double) -> Void) async throws -> URL
     private let uploader: Uploader
+    private let history: ShareHistoryStore
 
-    init(uploader: @escaping Uploader = { file, provider, progress in try await ShareUploader.upload(fileURL: file, provider: provider, progress: progress) }) {
+    init(history: ShareHistoryStore = .shared,
+         uploader: @escaping Uploader = { file, provider, progress in try await ShareUploader.upload(fileURL: file, provider: provider, progress: progress) }) {
         self.uploader = uploader
+        self.history = history
         consent = UserDefaults.standard.bool(forKey: Self.consentKey)
     }
 
@@ -56,6 +59,7 @@ final class ShareFlow: ObservableObject {
                     Task { @MainActor [weak self] in if case .uploading = self?.state { self?.state = .uploading(p) } }
                 }
                 copy(link)
+                history.add(name: project.name, link: link, provider: provider)
                 state = .done(link)
             } catch is CancellationError { state = .idle }
             catch ExportError.cancelled { state = .idle }
@@ -101,7 +105,7 @@ struct ShareLinkView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Share a link").font(.system(size: 18, weight: .bold))
             Label {
-                Text("Your video will be uploaded to a free third-party file host (\(flow.provider.host)). Anyone who has the link can watch it, and we don't control that service. Don't upload anything private.")
+                Text("Your video will be uploaded to a free third-party file host (\(flow.provider.host)). Anyone who has the link can watch it until it expires, then the host deletes it. We don't control that service, so don't upload anything private. Your last \(ShareHistory.limit) links are listed on the Home screen.")
                     .font(.system(size: 12)).foregroundStyle(Theme.text2).fixedSize(horizontal: false, vertical: true)
             } icon: { Image(systemName: "icloud.and.arrow.up").foregroundStyle(Theme.blueFocus) }
             .padding(10).background(Theme.bar, in: RoundedRectangle(cornerRadius: 8))

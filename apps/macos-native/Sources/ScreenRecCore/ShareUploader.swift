@@ -10,25 +10,26 @@ public struct ShareProvider: Equatable, Identifiable {
     public let maxBytes: Int64
     public let fileField: String
     public let fields: [String: String]
+    /// How long the host keeps the file. Every offered provider deletes it automatically.
+    public let lifetime: TimeInterval
 
-    /// Temporary hosting that deletes the file automatically (recommended: smaller privacy exposure).
+    private static let litterboxEndpoint = URL(string: "https://litterbox.catbox.moe/resources/internals/api.php")!
+
+    /// Only expiring hosting is offered: a link that cannot be deleted would break the "older shares go away" promise.
+    public static let litterbox1h = ShareProvider(
+        id: "litterbox-1h", title: "Link that expires in 1 hour", host: "Litterbox (litterbox.catbox.moe)",
+        detail: "Deleted automatically after 1 hour. Up to 1 GB.", endpoint: litterboxEndpoint, maxBytes: 1_000_000_000,
+        fileField: "fileToUpload", fields: ["reqtype": "fileupload", "time": "1h"], lifetime: 3_600)
     public static let litterbox24h = ShareProvider(
         id: "litterbox-24h", title: "Link that expires in 24 hours", host: "Litterbox (litterbox.catbox.moe)",
-        detail: "Deleted automatically after 24 hours. Up to 1 GB.",
-        endpoint: URL(string: "https://litterbox.catbox.moe/resources/internals/api.php")!, maxBytes: 1_000_000_000,
-        fileField: "fileToUpload", fields: ["reqtype": "fileupload", "time": "24h"])
+        detail: "Deleted automatically after 24 hours. Up to 1 GB.", endpoint: litterboxEndpoint, maxBytes: 1_000_000_000,
+        fileField: "fileToUpload", fields: ["reqtype": "fileupload", "time": "24h"], lifetime: 86_400)
     public static let litterbox72h = ShareProvider(
         id: "litterbox-72h", title: "Link that expires in 3 days", host: "Litterbox (litterbox.catbox.moe)",
-        detail: "Deleted automatically after 72 hours. Up to 1 GB.",
-        endpoint: URL(string: "https://litterbox.catbox.moe/resources/internals/api.php")!, maxBytes: 1_000_000_000,
-        fileField: "fileToUpload", fields: ["reqtype": "fileupload", "time": "72h"])
-    public static let catbox = ShareProvider(
-        id: "catbox", title: "Permanent link (200 MB max)", host: "Catbox (catbox.moe)",
-        detail: "Kept until the host removes it. Up to 200 MB.",
-        endpoint: URL(string: "https://catbox.moe/user/api.php")!, maxBytes: 200_000_000,
-        fileField: "fileToUpload", fields: ["reqtype": "fileupload"])
+        detail: "Deleted automatically after 72 hours. Up to 1 GB.", endpoint: litterboxEndpoint, maxBytes: 1_000_000_000,
+        fileField: "fileToUpload", fields: ["reqtype": "fileupload", "time": "72h"], lifetime: 259_200)
 
-    public static let all: [ShareProvider] = [.litterbox24h, .litterbox72h, .catbox]
+    public static let all: [ShareProvider] = [.litterbox1h, .litterbox24h, .litterbox72h]
 }
 
 public enum ShareError: LocalizedError, Equatable {

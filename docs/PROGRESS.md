@@ -1,6 +1,6 @@
 # Progress
 
-Last updated: 2026-10-11 (v0.4.0: optional share links). Truthful status only; "done" means verified.
+Last updated: 2026-10-11 (v0.4.1: last-5 shared links, expiring links only). Truthful status only; "done" means verified.
 
 ## PRD v2 phase status
 | # | Phase | Status | Evidence / gap |
@@ -35,6 +35,12 @@ Last updated: 2026-10-11 (v0.4.0: optional share links). Truthful status only; "
 - Recorder windows (timer, preview, notes, toolbar) are created before capture starts, hidden from screen sharing and excluded as an app, so they cannot appear in a recording.
 - New after-recording window: Open in editor, Restart recording (moves the take to the Trash and starts again with the same settings), Discard, Close. It appears after capture has stopped.
 - App icon added (from the supplied logo) to the app, DMG contents and site.
+
+## v0.4.1: shared-links history and retention
+- Home has a **Shared links** tab: the last 5 links (name, expiry countdown, copy/open/remove). Older links drop off the list; expired links disappear. Stored locally in `~/Library/Application Support/Ultimate Screen Recording/share-history.json`.
+- Only **expiring** hosting is offered now (1 hour, 24 hours, 3 days; Litterbox deletes the file itself). The permanent Catbox option was removed because a permanent upload can't be deleted. We cannot delete a file earlier than its expiry, and "Remove from list" only forgets the link.
+- **Opt-in** "Keep only my last 5 recordings" (recorder settings menu): after each recording, older ones are moved to the Trash (restorable). Off by default; asks for confirmation when turned on; never touches the recording just made. Shared links are unaffected.
+- Tests: history limit/order/expiry/persistence, retention selection and runner (stand-in Trash), flow records the link. 76 tests.
 
 ## v0.4.0: optional share links (EXPERIMENTAL, live hosts unverified)
 - "Get shareable link" in the after-recording window and "Share link" in the editor: exports 1080p (falls back to 720p/480p to fit the host's limit) to a temp MP4, uploads it, copies the link, deletes the temp file. Opt-in only: a consent checkbox is required and nothing is uploaded otherwise.

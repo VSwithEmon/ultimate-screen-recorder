@@ -57,6 +57,7 @@ final class RecordingSettings: ObservableObject {
         var hideDesktopIcons = false, hideDockIcon = true, highlightArea = true, openEditorAfter = true
         var countdown = 0, fps = 30, bakeCursor = false
         var savedAreas: [SavedArea] = []
+        var keepLastFive = false
     }
 
     @Published var mode: CaptureMode?
@@ -75,6 +76,8 @@ final class RecordingSettings: ObservableObject {
     @Published var fps: Int { didSet { save() } }
     @Published var bakeCursor: Bool { didSet { save() } }
     @Published var savedAreas: [SavedArea] { didSet { save() } }
+    /// Opt-in: move recordings older than the newest five to the Trash after each new recording.
+    @Published var keepLastFive: Bool { didSet { save() } }
     @Published var speakerNotes = ""
 
     private static let key = "recordingSettings.v1"
@@ -86,7 +89,7 @@ final class RecordingSettings: ObservableObject {
         cameraDimensions = (s.cameraWidth != nil && s.cameraHeight != nil) ? CMVideoDimensions(width: s.cameraWidth!, height: s.cameraHeight!) : nil
         hideCameraPreview = s.hideCameraPreview; micEnabled = s.micEnabled; micID = s.micID; systemAudio = s.systemAudio
         hideDesktopIcons = s.hideDesktopIcons; hideDockIcon = s.hideDockIcon; highlightArea = s.highlightArea
-        openEditorAfter = s.openEditorAfter; countdown = s.countdown; fps = s.fps; bakeCursor = s.bakeCursor; savedAreas = s.savedAreas
+        openEditorAfter = s.openEditorAfter; countdown = s.countdown; fps = s.fps; bakeCursor = s.bakeCursor; savedAreas = s.savedAreas; keepLastFive = s.keepLastFive
         loading = false
     }
 
@@ -95,7 +98,7 @@ final class RecordingSettings: ObservableObject {
         let s = Stored(cameraEnabled: cameraEnabled, cameraID: cameraID, cameraWidth: cameraDimensions?.width, cameraHeight: cameraDimensions?.height,
                        hideCameraPreview: hideCameraPreview, micEnabled: micEnabled, micID: micID, systemAudio: systemAudio,
                        hideDesktopIcons: hideDesktopIcons, hideDockIcon: hideDockIcon, highlightArea: highlightArea,
-                       openEditorAfter: openEditorAfter, countdown: countdown, fps: fps, bakeCursor: bakeCursor, savedAreas: savedAreas)
+                       openEditorAfter: openEditorAfter, countdown: countdown, fps: fps, bakeCursor: bakeCursor, savedAreas: savedAreas, keepLastFive: keepLastFive)
         if let d = try? JSONEncoder().encode(s) { UserDefaults.standard.set(d, forKey: Self.key) }
     }
 

@@ -293,7 +293,7 @@ footer .wrap{display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px}
     <article class="card"><svg><use href="#i-audio"/></svg><h3>Audio you control</h3><p>Mute or clean up the microphone, add your own background music, and keep each audio source on its own track.</p><span class="status-tag">Planned</span></article>
     <article class="card"><svg><use href="#i-cc"/></svg><h3>Local captions</h3><p>Transcripts generated on your device with an open Whisper model. You choose the language and model size; nothing is sent to a server.</p><span class="status-tag">Planned</span></article>
     <article class="card"><svg><use href="#i-export"/></svg><h3>Export without limits</h3><p>720p to 4K, MP4 or MOV, 24 to 60 fps, social ratios. No watermark and no export cap. 4K at 60 fps depends on your hardware.</p><span class="status-tag">Mac prototype: MP4 export works in tests</span></article>
-    <article class="card"><svg><use href="#i-export"/></svg><h3>Optional share links</h3><p>Upload a finished video to a free file host and get a link to send. Off by default, and you confirm before anything leaves your Mac.</p><span class="status-tag">Mac prototype: new, being tested</span></article>
+    <article class="card"><svg><use href="#i-export"/></svg><h3>Optional share links</h3><p>Upload a finished video to a free file host and get a link to send. Links expire on their own (1 hour, 24 hours or 3 days) and the host deletes the video. Your last 5 links are listed in the app. Off by default, and you confirm before anything leaves your Mac.</p><span class="status-tag">Mac prototype: new, being tested</span></article>
   </div>
 </section>
 
@@ -331,9 +331,9 @@ footer .wrap{display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px}
     <p class="intro" style="margin:0 auto">An early build for Apple Silicon Macs. It records, edits and exports on your computer. It is not a finished product, so expect rough edges. Windows is not available yet.</p>
     <div class="platforms">
       <div class="plat">
-        <h3>Mac <span class="soon" style="color:#86efac;background:rgba(34,197,94,.14);border-color:#4ADE80">Prototype 0.4.0</span></h3>
-        <dl><dt>Requires</dt><dd>macOS 14 or later, Apple Silicon (M1 or newer)</dd><dt>File</dt><dd>DMG, 2.8M</dd><dt>SHA-256</dt><dd style="word-break:break-all;font-size:11.5px">cbccac031f4dde435dbf815f3f8627dd7812e3c449a2a536196a523fb0637489</dd><dt>Note</dt><dd>Not notarized. On first open, right-click the app and choose Open (macOS 15: System Settings, Privacy &amp; Security, Open Anyway).</dd></dl>
-        <a class="btn primary" href="downloads/UltimateScreenRecording-0.4.0-arm64.dmg" download>Download for Mac</a>
+        <h3>Mac <span class="soon" style="color:#86efac;background:rgba(34,197,94,.14);border-color:#4ADE80">Prototype 0.4.1</span></h3>
+        <dl><dt>Requires</dt><dd>macOS 14 or later, Apple Silicon (M1 or newer)</dd><dt>File</dt><dd>DMG, 2.9M</dd><dt>SHA-256</dt><dd style="word-break:break-all;font-size:11.5px">7e88cd5232ff5308a23a4e723c85550618e14bf4341ad1d86ee50e85f53a9b3c</dd><dt>Note</dt><dd>Not notarized. On first open, right-click the app and choose Open (macOS 15: System Settings, Privacy &amp; Security, Open Anyway).</dd></dl>
+        <a class="btn primary" href="downloads/UltimateScreenRecording-0.4.1-arm64.dmg" download>Download for Mac</a>
       </div>
       <div class="plat">
         <h3>Windows <span class="soon">Coming soon</span></h3>
@@ -351,7 +351,7 @@ footer .wrap{display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px}
     <details><summary>Is it really free?</summary><p>Yes. The plan is no subscription, no account, no watermark and no export limit. There are no paid services behind it.</p></details>
     <details><summary>Can I download it now?</summary><p>A Mac prototype for Apple Silicon is available above. There is no Windows build and no Intel Mac build yet. The Mac build is not notarized, so macOS will warn you the first time you open it.</p></details>
     <details><summary>What works today?</summary><p>A macOS prototype has a floating recorder (display, window or area, with camera, microphone and system-audio menus), records into separate files, keeps cursor events, and has an editor with backgrounds, zoom, cursor effects, masks, trim and MP4 export. It has 40 automated tests, but it has not been tested on a wide range of real recordings, there is no installer, and Windows is not started.</p></details>
-    <details><summary>Does it upload my videos?</summary><p>Not unless you ask. Recording, editing and export happen on your device. The optional <b>Get shareable link</b> button uploads one video to a free third-party host (Litterbox or Catbox) and gives you a public link. It asks for your consent first, and the link-sharing feature is new and still being tested.</p></details>
+    <details><summary>Does it upload my videos?</summary><p>Not unless you ask. Recording, editing and export happen on your device. The optional <b>Get shareable link</b> button uploads one video to a free third-party host (Litterbox) and gives you a public link that expires on its own. It asks for your consent first, and the link-sharing feature is new and still being tested.</p></details>
     <details><summary>Is it a copy of another app?</summary><p>No. It is an independent project with its own code, icons, name and look. It draws on the same kind of workflow that polished screen recorders use.</p></details>
     <details><summary>Why will the installer show a warning?</summary><p>Notarization and code signing cost money and need paid developer accounts. If we ship unsigned builds, macOS and Windows will warn you on first launch, and the release notes will explain how to open them.</p></details>
   </div>

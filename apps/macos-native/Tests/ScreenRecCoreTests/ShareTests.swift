@@ -67,8 +67,8 @@ final class ShareTests: XCTestCase {
 
     func testTooLargeIsRejectedBeforeAnythingIsSent() async throws {
         MockURLProtocol.lastRequest = nil
-        var small = ShareProvider.catbox
-        small = ShareProvider(id: "t", title: "t", host: "h", detail: "d", endpoint: small.endpoint, maxBytes: 1000, fileField: "f", fields: [:])
+        var small = ShareProvider.litterbox24h
+        small = ShareProvider(id: "t", title: "t", host: "h", detail: "d", endpoint: small.endpoint, maxBytes: 1000, fileField: "f", fields: [:], lifetime: 60)
         do { _ = try await ShareUploader.upload(fileURL: try file(5000), provider: small, session: session); XCTFail("expected tooLarge") }
         catch { XCTAssertEqual(error as? ShareError, .tooLarge(limit: 1000, actual: 5000)) }
         XCTAssertNil(MockURLProtocol.lastRequest, "nothing leaves the Mac when the file is too big")
@@ -76,10 +76,10 @@ final class ShareTests: XCTestCase {
 
     func testServerErrorAndNonLinkRepliesAreReported() async throws {
         MockURLProtocol.handler = { _, _ in (503, Data("busy".utf8)) }
-        do { _ = try await ShareUploader.upload(fileURL: try file(100), provider: .catbox, session: session); XCTFail() }
+        do { _ = try await ShareUploader.upload(fileURL: try file(100), provider: .litterbox24h, session: session); XCTFail() }
         catch { XCTAssertEqual(error as? ShareError, .rejected(status: 503, message: "busy")) }
         MockURLProtocol.handler = { _, _ in (200, Data("Error: file type not allowed".utf8)) }
-        do { _ = try await ShareUploader.upload(fileURL: try file(100), provider: .catbox, session: session); XCTFail() }
+        do { _ = try await ShareUploader.upload(fileURL: try file(100), provider: .litterbox24h, session: session); XCTFail() }
         catch { XCTAssertEqual(error as? ShareError, .badResponse("Error: file type not allowed")) }
     }
 
@@ -92,6 +92,7 @@ final class ShareTests: XCTestCase {
 
     func testProvidersAreHttpsAndAdvertiseLimits() {
         for p in ShareProvider.all { XCTAssertEqual(p.endpoint.scheme, "https"); XCTAssertGreaterThan(p.maxBytes, 0) }
-        XCTAssertEqual(ShareProvider.catbox.maxBytes, 200_000_000)
+        XCTAssertTrue(ShareProvider.all.allSatisfy { $0.lifetime > 0 }, "every offered link expires on its own")
+        XCTAssertEqual(ShareProvider.all.map(\.lifetime), [3_600, 86_400, 259_200])
     }
 }
