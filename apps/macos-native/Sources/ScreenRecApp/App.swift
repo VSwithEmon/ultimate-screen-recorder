@@ -157,10 +157,10 @@ struct HomeView: View {
             permissionRow("Camera", model.cameraPermission, request: model.requestCameraAccess, pane: "Privacy_Camera")
             if model.screenPermission != .granted {
                 Text("After enabling Screen Recording in System Settings, quit and reopen the app. macOS applies it on the next launch.")
-                    .font(.system(size: 11)).foregroundStyle(Theme.text3)
+                    .font(.system(size: 12)).foregroundStyle(Theme.text3)
                 Button("Quit and reopen the app") { RecorderModel.relaunch() }.buttonStyle(QuietButtonStyle())
             }
-            Text("Cursor tracking records position and clicks only, never what you type.").font(.system(size: 11)).foregroundStyle(Theme.text3)
+            Text("Cursor tracking records position and clicks only, never what you type.").font(.system(size: 12)).foregroundStyle(Theme.text3)
         }
         .padding(16).frame(maxWidth: .infinity, alignment: .leading)
         .background(Theme.bar, in: RoundedRectangle(cornerRadius: 12))
@@ -204,7 +204,7 @@ struct HomeView: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(p.name).font(.system(size: 13, weight: .medium))
                                 Text(p.incomplete ? "Recording was interrupted and cannot be opened" : p.date.formatted(date: .abbreviated, time: .shortened))
-                                    .font(.system(size: 11)).foregroundStyle(Theme.text3)
+                                    .font(.system(size: 12)).foregroundStyle(Theme.text3)
                             }
                             Spacer()
                             if !p.incomplete { Image(systemName: "chevron.right").foregroundStyle(Theme.text3) }

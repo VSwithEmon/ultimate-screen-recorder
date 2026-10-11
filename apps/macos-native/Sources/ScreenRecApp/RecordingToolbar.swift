@@ -32,12 +32,12 @@ struct RecordingToolbarView: View {
             }
             .padding(.horizontal, 12).padding(.vertical, 8)
             .background(Theme.bar.opacity(0.96), in: RoundedRectangle(cornerRadius: 20))
-            .overlay(RoundedRectangle(cornerRadius: 20).stroke(Theme.line))
+            .overlay(RoundedRectangle(cornerRadius: 20).stroke(Theme.control))
             .shadow(color: .black.opacity(0.45), radius: 22, y: 10)
 
             if let e = coordinator.errorText {
                 HStack(spacing: 10) {
-                    Label(e, systemImage: "exclamationmark.triangle.fill").font(.system(size: 12)).foregroundStyle(Color(hex: 0xFCA5A5))
+                    Label(e, systemImage: "exclamationmark.triangle.fill").font(.system(size: 12)).foregroundStyle(Theme.bad)
                     if recorder.screenPermission != .granted {
                         Button("Open Settings") { recorder.openSystemSettings("Privacy_ScreenCapture") }.buttonStyle(QuietButtonStyle())
                         Button("Quit & reopen") { RecorderModel.relaunch() }.buttonStyle(QuietButtonStyle())
@@ -59,10 +59,10 @@ struct RecordingToolbarView: View {
         return Button { coordinator.select(m) } label: {
             VStack(spacing: 3) {
                 Image(systemName: m.icon).font(.system(size: 20, weight: .regular)).frame(height: 24)
-                Text(m.title).font(.system(size: 11, weight: .medium))
+                Text(m.title).font(.system(size: 12, weight: .medium))
             }
             .frame(width: 62, height: 52)
-            .foregroundStyle(enabled ? (selected ? Theme.text : Theme.text2) : Theme.text3.opacity(0.5))
+            .foregroundStyle(enabled ? (selected ? Theme.text : Theme.text2) : Theme.text3.opacity(0.75))
             .background(selected ? Theme.hover : Color.clear, in: RoundedRectangle(cornerRadius: 10))
         }
         .buttonStyle(.plain).disabled(!enabled)
@@ -134,7 +134,7 @@ struct RecordingToolbarView: View {
                 // Level meter.
                 GeometryReader { g in
                     ZStack(alignment: .leading) {
-                        Capsule().fill(Theme.line)
+                        Capsule().fill(Theme.control)
                         Capsule().fill(meter.level > 0.9 ? Theme.bad : Theme.ok).frame(width: g.size.width * CGFloat(min(1, settings.micEnabled ? meter.level : 0)))
                     }
                 }.frame(height: 3).padding(.horizontal, 6)
@@ -234,6 +234,7 @@ final class RecordingCoordinator: ObservableObject {
     private var statusItem: NSStatusItem?
     private var hiddenWindows: [NSWindow] = []
     private var area: (displayID: CGDirectDisplayID, selection: AreaSelection)?
+    private let areaOwner = AreaOwner()
     private var countdownTask: Task<Void, Never>?
 
     init(recorder: RecorderModel) { self.recorder = recorder }
@@ -248,19 +249,24 @@ final class RecordingCoordinator: ObservableObject {
         hiddenWindows = NSApp.windows.filter { $0.isVisible && !($0 is NSPanel) }
         hiddenWindows.forEach { $0.orderOut(nil) }
         errorText = nil
+        // As an agent app its panels can appear over other apps' fullscreen spaces on every display.
+        NSApp.setActivationPolicy(.accessory)
+        NSApp.activate(ignoringOtherApps: true)
 
-        let screen = NSScreen.main ?? NSScreen.screens[0]
-        let host = NSHostingView(rootView: RecordingToolbarView(coordinator: self, settings: settings, meter: meter, recorder: recorder))
+        let mouse = NSEvent.mouseLocation
+        let screen = NSScreen.screens.first { $0.frame.contains(mouse) } ?? NSScreen.main ?? NSScreen.screens[0]
+        let host = FirstMouseHostingView(rootView: RecordingToolbarView(coordinator: self, settings: settings, meter: meter, recorder: recorder))
         host.setFrameSize(host.fittingSize)
         let size = host.fittingSize
         let panel = OverlayPanel(contentRect: NSRect(origin: .zero, size: size), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.contentView = host
         panel.isOpaque = false; panel.backgroundColor = .clear; panel.hasShadow = false
-        panel.level = .popUpMenu
+        panel.level = NSWindow.Level(rawValue: NSWindow.Level.screenSaver.rawValue + 1)
+        panel.hidesOnDeactivate = false
         panel.isMovableByWindowBackground = true
         panel.isReleasedWhenClosed = false
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        panel.setFrameOrigin(NSPoint(x: screen.frame.midX - size.width / 2, y: screen.frame.minY + 70))
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
+        panel.setFrameOrigin(NSPoint(x: screen.frame.midX - size.width / 2, y: screen.visibleFrame.minY + 16))
         panel.onEscape = { [weak self] in self?.closeToolbar() }
         panel.orderFrontRegardless()
         toolbar = panel
@@ -273,7 +279,11 @@ final class RecordingCoordinator: ObservableObject {
         toolbar?.close(); toolbar = nil
         stopPreviews()
         settings.mode = nil
-        if recorder.state != .recording { hiddenWindows.forEach { $0.makeKeyAndOrderFront(nil) }; hiddenWindows = [] }
+        if recorder.state != .recording {
+            NSApp.setActivationPolicy(.regular)
+            NSApp.activate(ignoringOtherApps: true)
+            hiddenWindows.forEach { $0.makeKeyAndOrderFront(nil) }; hiddenWindows = []
+        }
     }
 
     /// Starts/stops camera preview and mic meter to match the current choices.
@@ -303,7 +313,7 @@ final class RecordingCoordinator: ObservableObject {
             .shadow(color: .black.opacity(0.4), radius: 12, y: 6)
         p.contentView = NSHostingView(rootView: view)
         p.isOpaque = false; p.backgroundColor = .clear; p.hasShadow = false
-        p.level = .floating; p.isMovableByWindowBackground = true; p.isReleasedWhenClosed = false
+        p.level = .screenSaver; p.isMovableByWindowBackground = true; p.isReleasedWhenClosed = false; p.hidesOnDeactivate = false
         p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         p.setFrameOrigin(NSPoint(x: screen.frame.maxX - size.width - 40, y: screen.frame.maxY - size.height - 70))
         p.orderFrontRegardless()
@@ -332,11 +342,17 @@ final class RecordingCoordinator: ObservableObject {
 
     private func addOverlay<V: View>(_ view: V, screen: NSScreen) {
         let p = makeOverlayPanel(for: screen)
-        p.contentView = NSHostingView(rootView: view)
+        p.contentView = FirstMouseHostingView(rootView: view)
         p.onEscape = { [weak self] in self?.settings.mode = nil; self?.clearOverlays() }
         p.orderFrontRegardless()
-        if screen == NSScreen.main { p.makeKey() }
         overlays.append(p)
+    }
+
+    private func finishOverlays() {
+        NSApp.activate(ignoringOtherApps: true)
+        // The screen under the mouse takes keyboard focus (Esc, size fields).
+        let mouse = NSEvent.mouseLocation
+        (overlays.first { $0.frame.contains(mouse) } ?? overlays.first)?.makeKey()
         toolbar?.orderFrontRegardless()
     }
 
@@ -344,6 +360,7 @@ final class RecordingCoordinator: ObservableObject {
         for s in NSScreen.screens {
             addOverlay(DisplayPickerView(screen: s) { [weak self] in self?.begin(target: .display(s.displayID), screen: s) }, screen: s)
         }
+        finishOverlays()
     }
 
     private func showWindowPickers() {
@@ -351,14 +368,18 @@ final class RecordingCoordinator: ObservableObject {
         for s in NSScreen.screens {
             addOverlay(WindowPickerView(screen: s, windows: windows) { [weak self] id in self?.begin(target: .window(id), screen: s) }, screen: s)
         }
+        finishOverlays()
     }
 
     private func showAreaPicker() {
-        let s = NSScreen.main ?? NSScreen.screens[0]
-        let initial = area?.displayID == s.displayID ? area?.selection : nil
-        addOverlay(AreaPickerView(screen: s, settings: settings, initial: initial,
-                                  onChange: { [weak self] sel in if let sel { self?.area = (s.displayID, sel) } },
-                                  onStart: { [weak self] sel in self?.begin(target: .area(s.displayID, sel.rect), screen: s) }), screen: s)
+        areaOwner.displayID = area?.displayID
+        for s in NSScreen.screens {
+            let initial = area?.displayID == s.displayID ? area?.selection : nil
+            addOverlay(AreaPickerView(screen: s, settings: settings, owner: areaOwner, initial: initial,
+                                      onChange: { [weak self] sel in if let sel { self?.area = (s.displayID, sel) } },
+                                      onStart: { [weak self] sel in self?.begin(target: .area(s.displayID, sel.rect), screen: s) }), screen: s)
+        }
+        finishOverlays()
     }
 
     // MARK: Recording
@@ -385,7 +406,7 @@ final class RecordingCoordinator: ObservableObject {
 
     private func showCountdown(_ n: Int, on screen: NSScreen) {
         hideCountdown()
-        let p = makeOverlayPanel(for: screen, level: .screenSaver, key: false, ignoresMouse: true)
+        let p = makeOverlayPanel(for: screen, level: NSWindow.Level(rawValue: NSWindow.Level.screenSaver.rawValue + 2), key: false, ignoresMouse: true)
         p.contentView = NSHostingView(rootView: CountdownView(value: n))
         p.orderFrontRegardless()
         countdownPanels = [p]
@@ -433,7 +454,7 @@ final class RecordingCoordinator: ObservableObject {
         let size = host.fittingSize
         let p = NSPanel(contentRect: NSRect(origin: .zero, size: size), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         p.contentView = host
-        p.isOpaque = false; p.backgroundColor = .clear; p.hasShadow = false; p.level = .popUpMenu; p.isReleasedWhenClosed = false
+        p.isOpaque = false; p.backgroundColor = .clear; p.hasShadow = false; p.level = NSWindow.Level(rawValue: NSWindow.Level.screenSaver.rawValue + 1); p.isReleasedWhenClosed = false; p.hidesOnDeactivate = false
         p.isMovableByWindowBackground = true
         p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         p.setFrameOrigin(NSPoint(x: screen.frame.midX - size.width / 2, y: screen.frame.minY + 40))
@@ -442,7 +463,7 @@ final class RecordingCoordinator: ObservableObject {
     }
 
     private func showHighlight(rect: CGRect, on screen: NSScreen) {
-        let p = makeOverlayPanel(for: screen, level: .floating, key: false, ignoresMouse: true)
+        let p = makeOverlayPanel(for: screen, level: .statusBar, key: false, ignoresMouse: true)
         let r = rect
         p.contentView = NSHostingView(rootView: Rectangle().stroke(Theme.blueBright, style: StrokeStyle(lineWidth: 2, dash: [8, 5]))
             .frame(width: r.width + 4, height: r.height + 4).position(x: r.midX, y: r.midY).ignoresSafeArea())

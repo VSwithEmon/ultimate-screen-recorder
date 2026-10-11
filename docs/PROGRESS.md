@@ -1,6 +1,6 @@
 # Progress
 
-Last updated: 2026-10-11 (recorder UX milestone, v0.2.0). Truthful status only; "done" means verified.
+Last updated: 2026-10-11 (v0.2.1: multi-display pickers fixed, WCAG AA pass). Truthful status only; "done" means verified.
 
 ## PRD v2 phase status
 | # | Phase | Status | Evidence / gap |
@@ -26,6 +26,11 @@ Last updated: 2026-10-11 (recorder UX milestone, v0.2.0). Truthful status only; 
 - Verified (automated, v0.2.0): area geometry (handles, ratio lock, Retina px, clamping, saved areas), cursor mapping into an area region. 51 tests total.
 - **Not verified:** window/area/display picking with a mouse, a real screen recording on your Mac (permissions), mic/screen sync on real hardware, camera capture, drag interactions with a mouse (resize/move events), export via the Save dialog, 4K60 performance.
 - Not built: Windows (all), window/area capture, pause, captions/Whisper, noise reduction, music, shortcut overlays, installers/DMG, signing.
+
+## Accessibility (WCAG 2.1 AA)
+- App and site colour tokens re-tuned and measured: all text pairs >= 4.5:1 on every surface, control borders >= 3:1, white-on-fill text >= 4.5:1. The app enforces this with `AccessibilityTests` (contrast of every token pair), so a colour change that breaks AA fails the build.
+- Text raised to >= 12 pt; overlay text sits on solid cards instead of the desktop; skip link and visible 3 px focus ring on the site.
+- Not yet audited: full VoiceOver pass, keyboard-only operation of the timeline and overlay pickers, Increase Contrast / Reduce Motion settings in the app.
 
 ## Known gaps
 - Landing page not yet reviewed against reference photos at matching viewport sizes (PRD requirement); first pass only.

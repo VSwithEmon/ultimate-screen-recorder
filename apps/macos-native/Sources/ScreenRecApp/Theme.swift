@@ -7,24 +7,50 @@ extension Color {
     }
 }
 
-/// Design tokens from the PRD (blue accent).
+/// Design tokens from the PRD (blue accent), tuned to WCAG 2.1 AA: text >= 4.5:1, control boundaries >= 3:1.
+/// Raw values are exposed so tests can verify contrast.
+enum Palette {
+    static let base: UInt32 = 0x111318
+    static let panel: UInt32 = 0x1C2028
+    static let bar: UInt32 = 0x20252E
+    static let hover: UInt32 = 0x2A3240
+    static let line: UInt32 = 0x333B49          // decorative dividers only
+    static let control: UInt32 = 0x7A8599       // borders/tracks of interactive controls (>= 3:1)
+    static let blue: UInt32 = 0x2563EB          // fills carrying white text (5.2:1)
+    static let bluePressed: UInt32 = 0x1D4ED8
+    static let blueBright: UInt32 = 0x3B82F6    // borders/indicators only
+    static let blueFocus: UInt32 = 0x60A5FA     // accent text
+    static let text: UInt32 = 0xF5F7FB
+    static let text2: UInt32 = 0xC0C8D6
+    static let text3: UInt32 = 0x9AA5B8
+    static let ok: UInt32 = 0x4ADE80
+    static let bad: UInt32 = 0xF87171
+    static let clip: UInt32 = 0xF59E0B
+    static let clipText: UInt32 = 0x2B1700
+    static let maskFill: UInt32 = 0x0F766E      // white text 5.5:1
+    static let highlightFill: UInt32 = 0x4F46E5 // white text 6.3:1
+}
+
 enum Theme {
-    static let base = Color(hex: 0x111318)
-    static let panel = Color(hex: 0x1C2028)
-    static let bar = Color(hex: 0x20252E)
-    static let hover = Color(hex: 0x2A3240)
-    static let line = Color(hex: 0x333B49)
-    static let blue = Color(hex: 0x2563EB)
-    static let blueBright = Color(hex: 0x3B82F6)
-    static let blueFocus = Color(hex: 0x60A5FA)
-    static let blueTint = Color(hex: 0x3B82F6, opacity: 0.16)
-    static let text = Color(hex: 0xF5F7FB)
-    static let text2 = Color(hex: 0xA8B2C1)
-    static let text3 = Color(hex: 0x788397)
-    static let ok = Color(hex: 0x22C55E)
-    static let bad = Color(hex: 0xEF4444)
-    static let clip = Color(hex: 0xF59E0B)
-    static let maskTint = Color(hex: 0x14B8A6)
+    static let base = Color(hex: Palette.base)
+    static let panel = Color(hex: Palette.panel)
+    static let bar = Color(hex: Palette.bar)
+    static let hover = Color(hex: Palette.hover)
+    static let line = Color(hex: Palette.line)
+    static let control = Color(hex: Palette.control)
+    static let blue = Color(hex: Palette.blue)
+    static let bluePressed = Color(hex: Palette.bluePressed)
+    static let blueBright = Color(hex: Palette.blueBright)
+    static let blueFocus = Color(hex: Palette.blueFocus)
+    static let blueTint = Color(hex: Palette.blueBright, opacity: 0.16)
+    static let text = Color(hex: Palette.text)
+    static let text2 = Color(hex: Palette.text2)
+    static let text3 = Color(hex: Palette.text3)
+    static let ok = Color(hex: Palette.ok)
+    static let bad = Color(hex: Palette.bad)
+    static let clip = Color(hex: Palette.clip)
+    static let maskTint = Color(hex: Palette.maskFill)
+    static let highlightTint = Color(hex: Palette.highlightFill)
 }
 
 struct PrimaryButtonStyle: ButtonStyle {
@@ -33,7 +59,7 @@ struct PrimaryButtonStyle: ButtonStyle {
             .font(.system(size: 13, weight: .semibold))
             .padding(.horizontal, 14).frame(height: 30)
             .foregroundStyle(.white)
-            .background(configuration.isPressed ? Theme.blueBright : Theme.blue, in: RoundedRectangle(cornerRadius: 8))
+            .background(configuration.isPressed ? Theme.bluePressed : Theme.blue, in: RoundedRectangle(cornerRadius: 8))
     }
 }
 
@@ -45,7 +71,7 @@ struct QuietButtonStyle: ButtonStyle {
             .padding(.horizontal, 9).frame(minHeight: 28)
             .foregroundStyle(selected ? Theme.text : Theme.text2)
             .background(selected ? Theme.blueTint : (configuration.isPressed ? Theme.hover : Color.clear), in: RoundedRectangle(cornerRadius: 8))
-            .overlay(RoundedRectangle(cornerRadius: 8).stroke(selected ? Theme.blueBright : Color.clear, lineWidth: 1))
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(selected ? Theme.blueFocus : Color.clear, lineWidth: 1))
             .contentShape(RoundedRectangle(cornerRadius: 8))
     }
 }
@@ -61,7 +87,7 @@ struct IconButton: View {
         Button(action: action) {
             Image(systemName: system).font(.system(size: 14, weight: .medium))
                 .frame(width: 30, height: 30)
-                .foregroundStyle(active ? Theme.blueFocus : (disabled ? Theme.text3.opacity(0.5) : Theme.text2))
+                .foregroundStyle(active ? Theme.blueFocus : (disabled ? Theme.text3.opacity(0.75) : Theme.text2))
                 .background(active ? Theme.blueTint : (hover && !disabled ? Theme.hover : Color.clear), in: RoundedRectangle(cornerRadius: 8))
         }
         .buttonStyle(.plain).disabled(disabled).help(help).onHover { hover = $0 }
@@ -76,7 +102,7 @@ struct InspectorSection<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title).font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.text)
-            if let subtitle { Text(subtitle).font(.system(size: 11)).foregroundStyle(Theme.text3).fixedSize(horizontal: false, vertical: true) }
+            if let subtitle { Text(subtitle).font(.system(size: 12)).foregroundStyle(Theme.text3).fixedSize(horizontal: false, vertical: true) }
             content
         }
         .padding(.vertical, 10)
@@ -93,7 +119,7 @@ struct ToggleRow: View {
         HStack(alignment: .top, spacing: 10) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(.system(size: 12, weight: .semibold))
-                if let subtitle { Text(subtitle).font(.system(size: 11)).foregroundStyle(Theme.text3).fixedSize(horizontal: false, vertical: true) }
+                if let subtitle { Text(subtitle).font(.system(size: 12)).foregroundStyle(Theme.text3).fixedSize(horizontal: false, vertical: true) }
             }
             Spacer(minLength: 8)
             Toggle("", isOn: $isOn).labelsHidden().toggleStyle(.switch).tint(Theme.blue).controlSize(.small)
@@ -114,9 +140,9 @@ struct SliderRow: View {
             HStack {
                 Text(title).font(.system(size: 12, weight: .semibold))
                 Spacer()
-                Text(format(value)).font(.system(size: 11).monospacedDigit()).foregroundStyle(Theme.text3)
+                Text(format(value)).font(.system(size: 12).monospacedDigit()).foregroundStyle(Theme.text3)
                 if let d = defaultValue {
-                    Button("Reset") { value = d }.buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(value == d ? Theme.text3.opacity(0.5) : Theme.blueFocus).disabled(value == d)
+                    Button("Reset") { value = d }.buttonStyle(.plain).font(.system(size: 12)).foregroundStyle(value == d ? Theme.text3.opacity(0.75) : Theme.blueFocus).disabled(value == d)
                 }
             }
             Slider(value: $value, in: range).tint(Theme.blue).controlSize(.small)

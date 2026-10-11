@@ -40,13 +40,13 @@ struct CanvasInspector: View {
                                 RoundedRectangle(cornerRadius: 8)
                                     .fill(LinearGradient(colors: [rgb(w.base.0), rgb(w.base.1)], startPoint: .topLeading, endPoint: .bottomTrailing))
                                     .frame(height: 46)
-                                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(model.edit.background.wallpaperIndex == i ? Theme.blueBright : Theme.line, lineWidth: model.edit.background.wallpaperIndex == i ? 2 : 1))
+                                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(model.edit.background.wallpaperIndex == i ? Theme.blueFocus : Theme.control, lineWidth: model.edit.background.wallpaperIndex == i ? 2 : 1))
                             }.buttonStyle(.plain).help(w.name).accessibilityLabel("\(w.name) wallpaper")
                         }
                     }
                     Button { model.mutate { $0.background.wallpaperIndex = Int.random(in: 0..<Wallpapers.all.count) } } label: {
                         Label("Pick random wallpaper", systemImage: "wand.and.stars").frame(maxWidth: .infinity)
-                    }.buttonStyle(QuietButtonStyle()).overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.line))
+                    }.buttonStyle(QuietButtonStyle()).overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.control))
                 }
                 SliderRow(title: "Background blur", value: Binding(get: { model.edit.background.blur }, set: { v in model.mutate("bg-blur") { $0.background.blur = v } }), defaultValue: 0)
             case .gradient:
@@ -66,8 +66,8 @@ struct CanvasInspector: View {
                 InspectorSection(title: "Background image", subtitle: "Choose an image from your computer. It is copied into the project.") {
                     Button { chooseImage() } label: {
                         Label(model.edit.background.imagePath == nil ? "Choose image…" : "Replace image…", systemImage: "photo").frame(maxWidth: .infinity)
-                    }.buttonStyle(QuietButtonStyle()).overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.line))
-                    if let p = model.edit.background.imagePath { Text(p).font(.system(size: 11)).foregroundStyle(Theme.text3) }
+                    }.buttonStyle(QuietButtonStyle()).overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.control))
+                    if let p = model.edit.background.imagePath { Text(p).font(.system(size: 12)).foregroundStyle(Theme.text3) }
                 }
                 SliderRow(title: "Background blur", value: Binding(get: { model.edit.background.blur }, set: { v in model.mutate("bg-blur") { $0.background.blur = v } }), defaultValue: 0)
             }
@@ -97,13 +97,13 @@ struct ZoomInspector: View {
         if let z = model.edit.zoomEvents.first(where: { $0.id == id }) {
             Panel {
                 Button { model.selection = nil } label: { Label("Close zoom editor", systemImage: "arrow.left") }
-                    .buttonStyle(QuietButtonStyle()).overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.line))
+                    .buttonStyle(QuietButtonStyle()).overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.control))
                 InspectorSection(title: "Zoom level", subtitle: "How close to zoom during this zoom phase") {
                     SliderRow(title: "", value: Binding(get: { z.scale }, set: { v in model.updateZoom(id) { $0.scale = v } }),
                               range: 1.1...4, defaultValue: 1.8, format: { String(format: "%.1f×", $0) })
                     Button { model.mutate { e in for i in e.zoomEvents.indices { e.zoomEvents[i].scale = z.scale } } } label: {
                         Label("Apply zoom level to all other zooms", systemImage: "plus.square").frame(maxWidth: .infinity)
-                    }.buttonStyle(QuietButtonStyle()).overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.line))
+                    }.buttonStyle(QuietButtonStyle()).overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.control))
                 }
                 InspectorSection(title: "Zoom mode", subtitle: z.mode == .auto
                                  ? (model.hasCursorData ? "The zoomed view follows the mouse cursor." : "No cursor data was recorded, so this will stay centred. Use Manual to choose a point.")
@@ -133,7 +133,7 @@ struct FocusPicker: View {
             let w = g.size.width, h = g.size.height
             let c = ZoomEngine.clampFocus(focus, scale: scale)
             ZStack(alignment: .topLeading) {
-                RoundedRectangle(cornerRadius: 6).fill(Theme.bar).overlay(RoundedRectangle(cornerRadius: 6).stroke(Theme.line))
+                RoundedRectangle(cornerRadius: 6).fill(Theme.bar).overlay(RoundedRectangle(cornerRadius: 6).stroke(Theme.control))
                 Rectangle().fill(Theme.blueTint).overlay(Rectangle().stroke(Theme.blueBright, lineWidth: 1.5))
                     .frame(width: w / scale, height: h / scale).position(x: c.x * w, y: c.y * h)
                 Circle().fill(.white).frame(width: 8, height: 8).position(x: c.x * w, y: c.y * h)
@@ -158,7 +158,7 @@ struct MaskInspector: View {
         if let m = model.edit.maskEvents.first(where: { $0.id == id }) {
             Panel {
                 Button { model.selection = nil } label: { Label("Close mask editor", systemImage: "arrow.left") }
-                    .buttonStyle(QuietButtonStyle()).overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.line))
+                    .buttonStyle(QuietButtonStyle()).overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.control))
                 InspectorSection(title: m.kind == .sensitive ? "Sensitive data mask" : "Highlight mask",
                                  subtitle: m.kind == .sensitive ? "Covers the selected area for the time it spans on the timeline. Drag the box in the preview to move or resize it."
                                                                : "Dims everything outside the selected area while it is active.") {
@@ -167,7 +167,7 @@ struct MaskInspector: View {
                                    selection: Binding(get: { m.style }, set: { s in model.updateMask(id) { $0.style = s } }))
                         if m.style == .pixelate {
                             Label("Pixelation can leave text partly readable. Use Solid cover for passwords, keys and personal data.", systemImage: "exclamationmark.triangle.fill")
-                                .font(.system(size: 11)).foregroundStyle(Color(hex: 0xFBBF24))
+                                .font(.system(size: 12)).foregroundStyle(Color(hex: 0xFCD34D))
                         }
                     }
                 }
@@ -210,7 +210,7 @@ struct CursorInspector: View {
                 ToggleRow(title: "Remove cursor shakes", subtitle: "Smooths sudden, short movements.", isOn: Binding(get: { model.edit.cursor.removeShakes }, set: { v in model.mutate { $0.cursor.removeShakes = v } }))
                 SliderRow(title: "Stop cursor before the end", value: Binding(get: { model.edit.cursor.stopBeforeEnd }, set: { v in model.mutate("cur-stop") { $0.cursor.stopBeforeEnd = v } }),
                           range: 0...3, defaultValue: 0, format: { $0 == 0 ? "Off" : String(format: "%.1fs", $0) })
-                Text("Click sounds and cursor rotation are not available yet.").font(.system(size: 11)).foregroundStyle(Theme.text3).padding(.top, 6)
+                Text("Click sounds and cursor rotation are not available yet.").font(.system(size: 12)).foregroundStyle(Theme.text3).padding(.top, 6)
             }
             .disabled(off).opacity(off ? 0.45 : 1)
         }
@@ -220,7 +220,7 @@ struct CursorInspector: View {
 struct Notice: View {
     let text: String
     var body: some View {
-        Label(text, systemImage: "info.circle").font(.system(size: 11)).foregroundStyle(Theme.text2)
+        Label(text, systemImage: "info.circle").font(.system(size: 12)).foregroundStyle(Theme.text2)
             .padding(10).frame(maxWidth: .infinity, alignment: .leading)
             .background(Theme.bar, in: RoundedRectangle(cornerRadius: 8)).padding(.bottom, 8)
     }
@@ -255,7 +255,7 @@ struct CameraInspector: View {
                 }
                 ToggleRow(title: "Mirror horizontally", isOn: Binding(get: { model.edit.camera.mirror }, set: { v in model.mutate { $0.camera.mirror = v } }))
                 ToggleRow(title: "Hide camera", isOn: Binding(get: { model.edit.camera.hidden }, set: { v in model.mutate { $0.camera.hidden = v } }))
-                Text("Camera layouts over time and size-during-zoom are not available yet.").font(.system(size: 11)).foregroundStyle(Theme.text3).padding(.top, 6)
+                Text("Camera layouts over time and size-during-zoom are not available yet.").font(.system(size: 12)).foregroundStyle(Theme.text3).padding(.top, 6)
             }
             .disabled(!model.hasCamera).opacity(model.hasCamera ? 1 : 0.45)
         }
@@ -280,7 +280,7 @@ struct AudioInspector: View {
                 SliderRow(title: "System audio volume", value: Binding(get: { model.edit.audio.systemGain }, set: { v in model.mutate("sys-gain") { $0.audio.systemGain = v } }),
                           range: 0...2, defaultValue: 1).disabled(!hasSys)
             }
-            Text("Noise reduction, volume normalising and background music are planned for a later phase.").font(.system(size: 11)).foregroundStyle(Theme.text3)
+            Text("Noise reduction, volume normalising and background music are planned for a later phase.").font(.system(size: 12)).foregroundStyle(Theme.text3)
         }
     }
 }
@@ -302,7 +302,7 @@ struct ShortcutsInspector: View {
                 Notice(text: "Not available yet. It needs the optional Input Monitoring permission and is planned for a later phase.")
             }
             Text("Editor shortcuts: Space play/pause · ⌘Z undo · ⇧⌘Z redo · ⌘E export · Delete removes the selected event.")
-                .font(.system(size: 11)).foregroundStyle(Theme.text3)
+                .font(.system(size: 12)).foregroundStyle(Theme.text3)
         }
     }
 }

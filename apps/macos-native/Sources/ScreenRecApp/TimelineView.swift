@@ -42,7 +42,7 @@ struct TimelineView: View {
         return ZStack(alignment: .topLeading) {
             ForEach(Array(stride(from: 0.0, through: model.duration, by: step)), id: \.self) { t in
                 VStack(spacing: 2) {
-                    Text(String(format: "%d:%02d", Int(t) / 60, Int(t) % 60)).font(.system(size: 10).monospacedDigit()).foregroundStyle(Theme.text3)
+                    Text(String(format: "%d:%02d", Int(t) / 60, Int(t) % 60)).font(.system(size: 12).monospacedDigit()).foregroundStyle(Theme.text3)
                     Rectangle().fill(Theme.line).frame(width: 1, height: 5)
                 }.position(x: CGFloat(t) * pps + 12, y: rulerH / 2)
             }
@@ -57,7 +57,7 @@ struct TimelineView: View {
                 Text("Clip").fontWeight(.semibold)
                 Text("\(Int(max(0, model.trimEnd - model.trimStart).rounded()))s")
                 Label("1×", systemImage: "gauge").labelStyle(.titleAndIcon)
-            }.font(.system(size: 11)).foregroundStyle(Color(hex: 0x2B1700)).frame(maxWidth: .infinity)
+            }.font(.system(size: 12)).foregroundStyle(Color(hex: Palette.clipText)).frame(maxWidth: .infinity)
             // Trimmed-away regions.
             Rectangle().fill(Color.black.opacity(0.62)).frame(width: CGFloat(model.trimStart) * pps)
             Rectangle().fill(Color.black.opacity(0.62)).frame(width: max(0, CGFloat(model.duration - model.trimEnd) * pps))
@@ -82,7 +82,7 @@ struct TimelineView: View {
             } else {
                 ForEach(model.edit.maskEvents) { m in
                     EventBlock(model: model, start: m.start, end: m.end, pps: pps,
-                               color: m.kind == .sensitive ? Theme.maskTint : Color(hex: 0x6366F1),
+                               color: m.kind == .sensitive ? Theme.maskTint : Theme.highlightTint,
                                label: m.kind == .sensitive ? "Sensitive mask" : "Highlight", icon: "rectangle.fill",
                                selected: model.selection == .mask(m.id), snapPoints: snapPoints(excluding: m.id),
                                select: { model.selection = .mask(m.id); model.seek(to: max(m.start, min(model.time, m.end))) },
@@ -152,7 +152,7 @@ struct EventBlock: View {
             RoundedRectangle(cornerRadius: 7).fill(color)
                 .overlay(RoundedRectangle(cornerRadius: 7).stroke(selected ? Color.white : Color.white.opacity(0.14), lineWidth: selected ? 2 : 1))
             HStack(spacing: 4) { Image(systemName: icon).font(.system(size: 9)); Text(label).lineLimit(1) }
-                .font(.system(size: 10.5, weight: .semibold)).foregroundStyle(.white).padding(.horizontal, 8)
+                .font(.system(size: 12, weight: .semibold)).foregroundStyle(.white).padding(.horizontal, 8)
             if selected {
                 HStack { grip(.leading); Spacer(); grip(.trailing) }
             }

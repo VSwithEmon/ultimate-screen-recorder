@@ -27,7 +27,7 @@ struct ExportSheet: View {
             .disabled(model.exportProgress != nil)
             if options.height == 2160 || options.fps == 60 {
                 Label("4K and 60 fps depend on your Mac and the source. The recording is \(Int(model.sourceSize.width))×\(Int(model.sourceSize.height)); upscaling does not add detail.",
-                      systemImage: "info.circle").font(.system(size: 11)).foregroundStyle(Theme.text2)
+                      systemImage: "info.circle").font(.system(size: 12)).foregroundStyle(Theme.text2)
             }
             HStack {
                 Text("\(Int(est.dims.width))×\(Int(est.dims.height)) · about \(est.megabytes < 1 ? "<1" : String(Int(est.megabytes))) MB · no watermark")
@@ -134,7 +134,7 @@ struct CropSheet: View {
             .frame(width: 780, height: 440)
 
             HStack {
-                Text("Crop is non-destructive: the original recording is untouched.").font(.system(size: 11)).foregroundStyle(Theme.text3)
+                Text("Crop is non-destructive: the original recording is untouched.").font(.system(size: 12)).foregroundStyle(Theme.text3)
                 Spacer()
                 Button("Discard changes") { dismiss() }.buttonStyle(QuietButtonStyle()).keyboardShortcut(.cancelAction)
                 Button { model.mutate { $0.crop = rect.clamped() }; dismiss() } label: { Label("Confirm changes", systemImage: "return") }

@@ -12,14 +12,15 @@
   color-scheme:dark;
   --base:#111318; --panel:#1C2028; --bar:#20252E; --hover:#2A3240; --line:#333B49;
   --blue:#2563EB; --blue-2:#3B82F6; --blue-3:#60A5FA; --blue-tint:rgba(59,130,246,.16);
-  --text:#F5F7FB; --text-2:#A8B2C1; --text-3:#788397; --ok:#22C55E; --bad:#EF4444; --clip:#F59E0B;
+  --text:#F5F7FB; --text-2:#C0C8D6; --text-3:#9AA5B8; --ok:#4ADE80; --bad:#F87171; --control:#7A8599; --blue-press:#1D4ED8; --clip:#F59E0B;
   --font:-apple-system,BlinkMacSystemFont,"Segoe UI Variable","Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif;
 }
 *{box-sizing:border-box}
 html{scroll-behavior:smooth}
 body{margin:0;background:var(--base);color:var(--text);font-family:var(--font);line-height:1.5;-webkit-font-smoothing:antialiased}
 a{color:inherit;text-decoration:none}
-:focus-visible{outline:2px solid var(--blue-3);outline-offset:3px;border-radius:6px}
+:focus-visible{outline:3px solid var(--blue-3);outline-offset:3px;border-radius:6px}
+.skip{position:absolute;left:12px;top:-60px;background:var(--blue);color:#fff;padding:10px 16px;border-radius:8px;z-index:50;font-weight:700}.skip:focus{top:12px}
 .wrap{max-width:1180px;margin:0 auto;padding:0 20px}
 @media(min-width:720px){.wrap{padding:0 32px}}
 
@@ -35,17 +36,17 @@ nav{height:64px;display:flex;align-items:center;justify-content:space-between;ga
 /* buttons */
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:44px;padding:0 20px;border-radius:12px;font:600 15px var(--font);border:1px solid transparent;cursor:pointer;transition:background .18s,border-color .18s,transform .18s}
 .btn.primary{background:var(--blue);color:#fff}
-.btn.primary:hover{background:var(--blue-2)}
-.btn.ghost{background:var(--panel);border-color:var(--line);color:var(--text)}
+.btn.primary:hover{background:var(--blue-press)}
+.btn.ghost{background:var(--panel);border-color:var(--control);color:var(--text)}
 .btn.ghost:hover{background:var(--hover)}
-.btn[aria-disabled=true]{background:var(--panel);border-color:var(--line);color:var(--text-3);cursor:not-allowed}
+.btn[aria-disabled=true]{background:var(--panel);border-color:var(--control);color:var(--text-3);cursor:not-allowed}
 .btn[aria-disabled=true]:hover{background:var(--panel)}
-.soon{font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--blue-3);background:var(--blue-tint);border:1px solid rgba(96,165,250,.35);padding:3px 8px;border-radius:99px}
+.soon{font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--blue-3);background:var(--blue-tint);border:1px solid rgba(96,165,250,.35);padding:3px 8px;border-radius:99px}
 
 /* hero */
 .hero{text-align:center;padding:72px 0 40px}
 @media(min-width:720px){.hero{padding:104px 0 56px}}
-.pill{display:inline-flex;gap:8px;align-items:center;font-size:13px;color:var(--text-2);background:var(--panel);border:1px solid var(--line);padding:6px 14px;border-radius:99px}
+.pill{display:inline-flex;gap:8px;align-items:center;font-size:13px;color:var(--text-2);background:var(--panel);border:1px solid var(--control);padding:6px 14px;border-radius:99px}
 .dot{width:7px;height:7px;border-radius:50%;background:var(--blue-2)}
 h1{font-size:clamp(38px,7vw,72px);line-height:1.04;letter-spacing:-.045em;margin:22px auto 18px;max-width:900px;font-weight:750}
 h1 em{font-style:normal;color:var(--blue-3)}
@@ -133,12 +134,12 @@ h1 em{font-style:normal;color:var(--blue-3)}
 h2{font-size:clamp(28px,4vw,42px);letter-spacing:-.03em;line-height:1.12;margin:12px 0 14px;font-weight:720}
 .intro{color:var(--text-2);max-width:640px;font-size:17px;margin:0}
 .grid{display:grid;gap:14px;margin-top:36px;grid-template-columns:repeat(auto-fill,minmax(280px,1fr))}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:22px;transition:border-color .18s,background .18s}
+.card{background:var(--panel);border:1px solid var(--control);border-radius:14px;padding:22px;transition:border-color .18s,background .18s}
 .card:hover{border-color:#44506a;background:#1f242d}
 .card svg{width:22px;height:22px;color:var(--blue-3)}
 .card h3{font-size:17px;margin:14px 0 6px;letter-spacing:-.01em}
 .card p{margin:0;color:var(--text-2);font-size:14.5px}
-.status-tag{display:inline-block;margin-top:12px;font-size:11px;font-weight:600;color:var(--text-3);border:1px solid var(--line);border-radius:6px;padding:2px 7px}
+.status-tag{display:inline-block;margin-top:12px;font-size:12px;font-weight:600;color:var(--text-2);border:1px solid var(--control);border-radius:6px;padding:2px 7px}
 .steps{display:grid;gap:14px;margin-top:36px;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));counter-reset:s}
 .step{border-top:2px solid var(--blue);padding-top:16px;counter-increment:s}
 .step:before{content:"0" counter(s);color:var(--blue-3);font-weight:700;font-size:13px}
@@ -149,9 +150,9 @@ h2{font-size:clamp(28px,4vw,42px);letter-spacing:-.03em;line-height:1.12;margin:
 .ticks{list-style:none;margin:0;padding:0;display:grid;gap:12px}
 .ticks li{display:flex;gap:12px;color:var(--text-2);font-size:15.5px}
 .ticks svg{flex:none;width:20px;height:20px;color:var(--ok);margin-top:2px}
-.dl{background:linear-gradient(150deg,#16203a,var(--panel) 60%);border:1px solid var(--line);border-radius:22px;padding:clamp(24px,5vw,52px);text-align:center}
+.dl{background:linear-gradient(150deg,#16203a,var(--panel) 60%);border:1px solid var(--control);border-radius:22px;padding:clamp(24px,5vw,52px);text-align:center}
 .platforms{display:grid;gap:14px;margin:30px auto 0;max-width:720px;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));text-align:left}
-.plat{background:var(--base);border:1px solid var(--line);border-radius:16px;padding:22px;display:grid;gap:12px}
+.plat{background:var(--base);border:1px solid var(--control);border-radius:16px;padding:22px;display:grid;gap:12px}
 .plat h3{margin:0;font-size:20px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .plat dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:4px 14px;font-size:13.5px}
 .plat dt{color:var(--text-3)}.plat dd{margin:0;color:var(--text-2)}
@@ -167,6 +168,7 @@ footer .wrap{display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px}
 </style>
 </head>
 <body>
+<a class="skip" href="#top">Skip to main content</a>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <defs>
     <symbol id="i-cursor" viewBox="0 0 24 24"><path d="M5 3l14 7-6 2-2 6z" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></symbol>
@@ -208,7 +210,7 @@ footer .wrap{display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px}
   </nav>
 </header>
 
-<main id="top">
+<main id="top" tabindex="-1">
 <section class="hero wrap">
   <span class="pill"><span class="dot"></span>In development · Mac and Windows · Free</span>
   <h1>Record beautifully.<br><em>Edit effortlessly.</em> Share anywhere.</h1>
@@ -328,9 +330,9 @@ footer .wrap{display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px}
     <p class="intro" style="margin:0 auto">An early build for Apple Silicon Macs. It records, edits and exports on your computer. It is not a finished product, so expect rough edges. Windows is not available yet.</p>
     <div class="platforms">
       <div class="plat">
-        <h3>Mac <span class="soon" style="color:#86efac;background:rgba(34,197,94,.14);border-color:rgba(34,197,94,.4)">Prototype 0.2.0</span></h3>
-        <dl><dt>Requires</dt><dd>macOS 14 or later, Apple Silicon (M1 or newer)</dd><dt>File</dt><dd>DMG, 1.4M</dd><dt>SHA-256</dt><dd style="word-break:break-all;font-size:11.5px">ea5a4a63d1a294a567445c9a883cb2270a474f7b716796a9db0132a775f50632</dd><dt>Note</dt><dd>Not notarized. On first open, right-click the app and choose Open (macOS 15: System Settings, Privacy &amp; Security, Open Anyway).</dd></dl>
-        <a class="btn primary" href="downloads/UltimateScreenRecording-0.2.0-arm64.dmg" download>Download for Mac</a>
+        <h3>Mac <span class="soon" style="color:#86efac;background:rgba(34,197,94,.14);border-color:#4ADE80">Prototype 0.2.1</span></h3>
+        <dl><dt>Requires</dt><dd>macOS 14 or later, Apple Silicon (M1 or newer)</dd><dt>File</dt><dd>DMG, 1.4M</dd><dt>SHA-256</dt><dd style="word-break:break-all;font-size:11.5px">d48dba21193240e3e015f335d1ea14f52bfd3230cc4357d0204de10596e729e9</dd><dt>Note</dt><dd>Not notarized. On first open, right-click the app and choose Open (macOS 15: System Settings, Privacy &amp; Security, Open Anyway).</dd></dl>
+        <a class="btn primary" href="downloads/UltimateScreenRecording-0.2.1-arm64.dmg" download>Download for Mac</a>
       </div>
       <div class="plat">
         <h3>Windows <span class="soon">Coming soon</span></h3>

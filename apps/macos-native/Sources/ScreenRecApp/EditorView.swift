@@ -66,7 +66,7 @@ struct EditorView: View {
         .overlay(alignment: .top) {
             if let n = model.notice {
                 Text(n).font(.system(size: 12, weight: .medium)).padding(.horizontal, 14).padding(.vertical, 8)
-                    .background(Theme.bar, in: Capsule()).overlay(Capsule().stroke(Theme.line))
+                    .background(Theme.bar, in: Capsule()).overlay(Capsule().stroke(Theme.control))
                     .padding(.top, 54).transition(.opacity)
                     .task(id: n) { try? await Task.sleep(nanoseconds: 3_500_000_000); if model.notice == n { model.notice = nil } }
             }
@@ -229,7 +229,7 @@ struct TransportBar: View {
             IconButton(system: "forward.end", help: "Next event or trim point") { model.jump(forward: true) }
             Spacer()
             Text(timeString(model.time - model.trimStart) + " / " + timeString(model.trimEnd - model.trimStart))
-                .font(.system(size: 11).monospacedDigit()).foregroundStyle(Theme.text3)
+                .font(.system(size: 12).monospacedDigit()).foregroundStyle(Theme.text3)
             IconButton(system: "scissors", help: "Trim start or end", active: model.edit.trimStart > 0 || model.edit.trimEnd != nil) { showTrim = true }
                 .popover(isPresented: $showTrim) {
                     VStack(alignment: .leading, spacing: 8) {
@@ -241,7 +241,7 @@ struct TransportBar: View {
                 }
             Image(systemName: "magnifyingglass").foregroundStyle(Theme.text2)
             Slider(value: $model.timelineScale, in: 1...8).frame(width: 70).controlSize(.mini).tint(Theme.blue).help("Timeline zoom")
-            Text("1×").font(.system(size: 11)).foregroundStyle(Theme.text3).help("Playback speed changes are not available yet")
+            Text("1×").font(.system(size: 12)).foregroundStyle(Theme.text3).help("Playback speed changes are not available yet")
         }
         .frame(height: 34)
     }

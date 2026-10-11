@@ -20,10 +20,10 @@ final class OverlayRenderTests: XCTestCase {
         guard let screen = NSScreen.main else { return }
         let settings = RecordingSettings()
         let size = CGSize(width: 1200, height: 700)
-        try render(AreaPickerView(screen: screen, settings: settings,
+        try render(AreaPickerView(screen: screen, settings: settings, owner: AreaOwner(),
                                   initial: AreaSelection(rect: CGRect(x: 260, y: 180, width: 640, height: 360)),
                                   onChange: { _ in }, onStart: { _ in }), size: size, name: "area_picker")
-        try render(AreaPickerView(screen: screen, settings: settings, initial: nil, onChange: { _ in }, onStart: { _ in }), size: size, name: "area_empty")
+        try render(AreaPickerView(screen: screen, settings: settings, owner: AreaOwner(), initial: nil, onChange: { _ in }, onStart: { _ in }), size: size, name: "area_empty")
         try render(DisplayPickerView(screen: screen, onStart: {}), size: size, name: "display_picker")
         try render(WindowPickerView(screen: screen, windows: [], onStart: { _ in }), size: size, name: "window_picker")
         try render(RecordingHUDView(recorder: RecorderModel(), onStop: {}), size: CGSize(width: 260, height: 70), name: "hud")

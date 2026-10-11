@@ -2,6 +2,11 @@ import AppKit
 import ScreenRecCore
 import SwiftUI
 
+/// Hosting view that handles the very first click, so the first drag on an overlay isn't swallowed by app activation.
+final class FirstMouseHostingView<Content: View>: NSHostingView<Content> {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+}
+
 /// Borderless panel that can take keyboard focus (needed for the area size fields).
 final class OverlayPanel: NSPanel {
     override var canBecomeKey: Bool { true }
@@ -10,15 +15,23 @@ final class OverlayPanel: NSPanel {
     override func cancelOperation(_ sender: Any?) { onEscape?() }
 }
 
+/// Shared by area pickers on every screen: only the screen being drawn on keeps a selection.
+@MainActor
+final class AreaOwner: ObservableObject {
+    @Published var displayID: CGDirectDisplayID?
+}
+
 extension NSScreen {
     var displayID: CGDirectDisplayID { (deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value ?? CGMainDisplayID() }
     /// Display bounds in global top-left coordinates.
     var cgBounds: CGRect { CGDisplayBounds(displayID) }
 }
 
-func makeOverlayPanel(for screen: NSScreen, level: NSWindow.Level = .floating, key: Bool = true, ignoresMouse: Bool = false) -> OverlayPanel {
+func makeOverlayPanel(for screen: NSScreen, level: NSWindow.Level = .screenSaver, key: Bool = true, ignoresMouse: Bool = false) -> OverlayPanel {
     let p = OverlayPanel(contentRect: screen.frame, styleMask: [.borderless], backing: .buffered, defer: false)
     p.level = level
+    p.hidesOnDeactivate = false          // NSPanel hides itself when the app deactivates by default
+    p.becomesKeyOnlyIfNeeded = false
     p.isOpaque = false
     p.backgroundColor = .clear
     p.hasShadow = false
@@ -39,14 +52,18 @@ struct DisplayPickerView: View {
         let w = Int(screen.frame.width * screen.backingScaleFactor), h = Int(screen.frame.height * screen.backingScaleFactor)
         let hz = Int(mode?.refreshRate ?? 60)
         ZStack {
-            Color.black.opacity(0.45)
+            Color.black.opacity(0.55)
+            // Text sits on a solid card so contrast never depends on the desktop behind it.
             VStack(spacing: 14) {
-                Text(screen.localizedName).font(.system(size: 30, weight: .bold)).foregroundStyle(.white)
-                Text("\(w)×\(h)\(hz > 0 ? " · \(hz) FPS" : "")").font(.system(size: 15)).foregroundStyle(.white.opacity(0.8))
+                Text(screen.localizedName).font(.system(size: 28, weight: .bold)).foregroundStyle(Theme.text)
+                Text("\(w)×\(h)\(hz > 0 ? " · \(hz) FPS" : "")").font(.system(size: 15)).foregroundStyle(Theme.text2)
                 Button(action: onStart) { Label("Start recording", systemImage: "record.circle") }
                     .buttonStyle(PrimaryButtonStyle()).controlSize(.large).padding(.top, 6)
-                Text("Press Esc to cancel").font(.system(size: 12)).foregroundStyle(.white.opacity(0.6))
+                Text("Press Esc to cancel").font(.system(size: 12)).foregroundStyle(Theme.text3)
             }
+            .padding(28)
+            .background(Theme.panel, in: RoundedRectangle(cornerRadius: 18))
+            .overlay(RoundedRectangle(cornerRadius: 18).stroke(Theme.control))
         }
         .ignoresSafeArea()
     }
@@ -88,7 +105,7 @@ struct WindowPickerView: View {
     var body: some View {
         let origin = screen.cgBounds.origin
         return ZStack(alignment: .topLeading) {
-            Color.black.opacity(0.35)
+            Color.black.opacity(0.5)
                 .onContinuousHover { phase in
                     if chosen != nil { return }
                     if case .active(let p) = phase {
@@ -106,14 +123,14 @@ struct WindowPickerView: View {
                     .frame(width: r.width, height: r.height).position(x: r.midX, y: r.midY).allowsHitTesting(false)
                 VStack(spacing: 10) {
                     Text(w.owner + (w.title.isEmpty ? "" : " — " + w.title)).font(.system(size: 14, weight: .semibold)).lineLimit(1)
-                        .padding(.horizontal, 12).padding(.vertical, 6).background(.black.opacity(0.7), in: Capsule()).foregroundStyle(.white)
+                        .padding(.horizontal, 12).padding(.vertical, 6).background(Theme.panel, in: Capsule()).overlay(Capsule().stroke(Theme.control)).foregroundStyle(Theme.text)
                     if chosen != nil {
                         Button { onStart(w.id) } label: { Label("Start recording", systemImage: "record.circle") }.buttonStyle(PrimaryButtonStyle())
                     }
                 }.position(x: r.midX, y: r.midY).allowsHitTesting(chosen != nil)
             } else {
-                Text("Click a window to record it").font(.system(size: 16, weight: .semibold)).foregroundStyle(.white)
-                    .padding(.horizontal, 14).padding(.vertical, 8).background(.black.opacity(0.6), in: Capsule())
+                Text("Click a window to record it").font(.system(size: 16, weight: .semibold)).foregroundStyle(Theme.text)
+                    .padding(.horizontal, 14).padding(.vertical, 8).background(Theme.panel, in: Capsule()).overlay(Capsule().stroke(Theme.control))
                     .frame(maxWidth: .infinity, maxHeight: .infinity).allowsHitTesting(false)
             }
         }
@@ -126,6 +143,7 @@ struct WindowPickerView: View {
 struct AreaPickerView: View {
     let screen: NSScreen
     @ObservedObject var settings: RecordingSettings
+    @ObservedObject var owner: AreaOwner
     let initial: AreaSelection?
     let onChange: (AreaSelection?) -> Void
     let onStart: (AreaSelection) -> Void
@@ -148,7 +166,7 @@ struct AreaPickerView: View {
                 .contentShape(Rectangle())
                 .gesture(DragGesture(minimumDistance: 4).onChanged { v in
                     let s = createStart ?? v.startLocation; createStart = s
-                    area = AreaSelection.fromDrag(from: s, to: v.location, bounds: bounds); onChange(area)
+                    area = AreaSelection.fromDrag(from: s, to: v.location, bounds: bounds); claim(); onChange(area)
                 }.onEnded { _ in createStart = nil })
             if let a = area {
                 let r = a.rect
@@ -161,13 +179,14 @@ struct AreaPickerView: View {
                 ForEach(AreaSelection.Handle.allCases, id: \.self) { h in handle(h, in: r) }
                 controls(for: a)
             } else {
-                Text("Drag the area you want to record").font(.system(size: 18, weight: .semibold)).foregroundStyle(.white)
-                    .padding(.horizontal, 16).padding(.vertical, 9).background(.black.opacity(0.55), in: Capsule())
+                Text("Drag the area you want to record").font(.system(size: 18, weight: .semibold)).foregroundStyle(Theme.text)
+                    .padding(.horizontal, 16).padding(.vertical, 9).background(Theme.panel, in: Capsule()).overlay(Capsule().stroke(Theme.control))
                     .frame(maxWidth: .infinity, maxHeight: .infinity).allowsHitTesting(false)
             }
         }
         .ignoresSafeArea()
-        .onAppear { area = initial }
+        .onAppear { area = initial; if initial != nil { owner.displayID = screen.displayID } }
+        .onChange(of: owner.displayID) { _, new in if new != screen.displayID { area = nil } }
         .alert("Save this area", isPresented: $savePrompt) {
             TextField("Name", text: $saveName)
             Button("Save") {
@@ -194,7 +213,7 @@ struct AreaPickerView: View {
     }
 
     private func handle(_ h: AreaSelection.Handle, in r: CGRect) -> some View {
-        Circle().fill(.white).overlay(Circle().stroke(Color.black.opacity(0.5), lineWidth: 1)).frame(width: 11, height: 11)
+        Circle().fill(.white).overlay(Circle().stroke(Color.black, lineWidth: 1.5)).frame(width: 12, height: 12)
             .padding(8).contentShape(Rectangle())
             .position(position(of: h, in: r))
             .gesture(DragGesture().onChanged { v in
@@ -228,27 +247,27 @@ struct AreaPickerView: View {
             positionRow(o: o)
             optionsRow
         }
-        .font(.system(size: 12)).foregroundStyle(.white)
-        .padding(12).background(Color(hex: 0x1C2028).opacity(0.96), in: RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.line))
+        .font(.system(size: 12)).foregroundStyle(Theme.text)
+        .padding(12).background(Theme.panel, in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.control))
     }
 
     private func sizeRow(px: (w: Int, h: Int)) -> some View {
         HStack(spacing: 8) {
-            Text("Size").foregroundStyle(.white.opacity(0.6))
+            Text("Size").foregroundStyle(Theme.text2)
             numberField(px.w) { v in update { $0.setPixelSize(w: v, h: nil, scale: scale, bounds: bounds, ratio: ratio) } }
-            Text("×").foregroundStyle(.white.opacity(0.6))
+            Text("×").foregroundStyle(Theme.text2)
             numberField(px.h) { v in update { $0.setPixelSize(w: nil, h: v, scale: scale, bounds: bounds, ratio: ratio) } }
-            Text("px").foregroundStyle(.white.opacity(0.6))
+            Text("px").foregroundStyle(Theme.text2)
         }
     }
 
     private func positionRow(o: (x: Int, y: Int)) -> some View {
         HStack(spacing: 8) {
-            Text("Position").foregroundStyle(.white.opacity(0.6))
+            Text("Position").foregroundStyle(Theme.text2)
             numberField(o.x) { v in update { $0.setPixelOrigin(x: v, y: nil, scale: scale, bounds: bounds) } }
             numberField(o.y) { v in update { $0.setPixelOrigin(x: nil, y: v, scale: scale, bounds: bounds) } }
-            Text("px").foregroundStyle(.white.opacity(0.6))
+            Text("px").foregroundStyle(Theme.text2)
         }
     }
 
@@ -286,6 +305,8 @@ struct AreaPickerView: View {
         return "Any"
     }
 
+    private func claim() { if owner.displayID != screen.displayID { owner.displayID = screen.displayID } }
+
     private func update(_ f: (inout AreaSelection) -> Void) {
         guard var a = area else { return }
         f(&a); area = a; onChange(a)
@@ -294,7 +315,7 @@ struct AreaPickerView: View {
     private func numberField(_ value: Int, set: @escaping (Int) -> Void) -> some View {
         TextField("", value: Binding(get: { value }, set: { set($0) }), format: .number.grouping(.never))
             .textFieldStyle(.plain).multilineTextAlignment(.center).frame(width: 62, height: 24)
-            .background(Color.white.opacity(0.1), in: RoundedRectangle(cornerRadius: 6))
+            .background(Theme.base, in: RoundedRectangle(cornerRadius: 6)).overlay(RoundedRectangle(cornerRadius: 6).stroke(Theme.control))
     }
 }
 
@@ -305,7 +326,8 @@ struct CountdownView: View {
     var body: some View {
         ZStack {
             Color.black.opacity(0.25)
-            Text("\(value)").font(.system(size: 160, weight: .heavy, design: .rounded)).foregroundStyle(.white).shadow(radius: 12)
+            Text("\(value)").font(.system(size: 130, weight: .heavy, design: .rounded)).foregroundStyle(Theme.text)
+                .frame(width: 260, height: 260).background(Theme.panel.opacity(0.94), in: Circle()).overlay(Circle().stroke(Theme.control))
         }.ignoresSafeArea()
     }
 }
@@ -320,7 +342,7 @@ struct RecordingHUDView: View {
             Button(action: onStop) { Label("Stop", systemImage: "stop.fill") }.buttonStyle(PrimaryButtonStyle()).tint(.red)
         }
         .padding(.horizontal, 16).frame(height: 48).foregroundStyle(Theme.text)
-        .background(Theme.bar, in: Capsule()).overlay(Capsule().stroke(Theme.line))
+        .background(Theme.bar, in: Capsule()).overlay(Capsule().stroke(Theme.control))
         .shadow(color: .black.opacity(0.4), radius: 14, y: 6)
     }
 }
@@ -332,7 +354,7 @@ struct SpeakerNotesView: View {
             Text("Speaker notes").font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.text2)
             TextEditor(text: $settings.speakerNotes).font(.system(size: 14)).scrollContentBackground(.hidden)
                 .padding(6).background(Theme.base, in: RoundedRectangle(cornerRadius: 8))
-            Text("Private: these notes are never recorded.").font(.system(size: 11)).foregroundStyle(Theme.text3)
+            Text("Private: these notes are never recorded.").font(.system(size: 12)).foregroundStyle(Theme.text3)
         }.padding(12).background(Theme.panel).foregroundStyle(Theme.text)
     }
 }
