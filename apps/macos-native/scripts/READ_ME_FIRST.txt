@@ -1,4 +1,4 @@
-Ultimate Screen Recording 0.1.0 (prototype, Apple Silicon, macOS 14+)
+Ultimate Screen Recording 0.2.0 (prototype, Apple Silicon, macOS 14+)
 
 1. Drag "Ultimate Screen Recording" onto Applications.
 2. This build is not notarized. The first time, right-click the app and choose Open, then Open again.

@@ -11,6 +11,7 @@ struct UltimateScreenRecordingApp: App {
             RootView()
                 .environmentObject(app)
                 .environmentObject(app.recorder)
+                .environmentObject(app.coordinator)
                 .frame(minWidth: 1100, minHeight: 700)
                 .preferredColorScheme(.dark)
         }
@@ -40,9 +41,16 @@ final class AppState: ObservableObject {
     @Published var editor: EditorModel?
     @Published var openError: String?
     let recorder = RecorderModel()
+    let coordinator: RecordingCoordinator
 
     init() {
-        recorder.onFinished = { [weak self] url in self?.open(url) }
+        coordinator = RecordingCoordinator(recorder: recorder)
+        recorder.onFinished = { [weak self] url in
+            guard let self else { return }
+            let openEditor = self.coordinator.settings.openEditorAfter
+            self.coordinator.recordingEnded()
+            if openEditor { self.open(url) }
+        }
         // `--open <project>` opens a project directly (used for QA and scripting).
         let args = CommandLine.arguments
         if let i = args.firstIndex(of: "--open"), i + 1 < args.count { open(URL(fileURLWithPath: args[i + 1])) }
@@ -91,6 +99,7 @@ struct ProjectItem: Identifiable {
 struct HomeView: View {
     @EnvironmentObject var app: AppState
     @EnvironmentObject var model: RecorderModel
+    @EnvironmentObject var coordinator: RecordingCoordinator
     @State private var projects: [ProjectItem] = []
 
     var body: some View {
@@ -120,36 +129,22 @@ struct HomeView: View {
     // MARK: Record
 
     private var recordCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             Text("New recording").font(.system(size: 14, weight: .semibold))
-            Text("Main display · 30 fps. Window and area capture are not available yet.").font(.system(size: 11)).foregroundStyle(Theme.text3)
-            Toggle("System audio", isOn: $model.recordSystemAudio)
-            Toggle("Microphone", isOn: $model.recordMicrophone)
-            Toggle("Camera (separate track)", isOn: $model.recordCamera)
-            Toggle("Bake the cursor into the video", isOn: $model.cursorInVideo)
-            Text(model.cursorInVideo ? "Cursor effects, smoothing and automatic zoom won't be available for this recording." : "The cursor is recorded separately so you can restyle it, smooth it and zoom automatically.")
-                .font(.system(size: 11)).foregroundStyle(Theme.text3)
+            Text("Choose a display, window or area, plus camera, microphone and system audio, in the floating recorder.").font(.system(size: 12)).foregroundStyle(Theme.text3)
             HStack(spacing: 12) {
-                switch model.state {
-                case .recording:
-                    Button { Task { await model.stop() } } label: { Label("Stop recording", systemImage: "stop.circle.fill") }
-                        .buttonStyle(PrimaryButtonStyle()).tint(.red)
-                    Circle().fill(Theme.bad).frame(width: 8, height: 8)
-                    Text(timeString(model.elapsed)).monospacedDigit()
-                case .starting, .finalizing:
-                    ProgressView().controlSize(.small)
-                    Text(model.state == .starting ? "Starting…" : "Saving your recording…").foregroundStyle(Theme.text2)
-                default:
-                    Button { Task { await model.start() } } label: { Label("Start recording", systemImage: "record.circle") }.buttonStyle(PrimaryButtonStyle())
+                if case .finalizing = model.state {
+                    ProgressView().controlSize(.small); Text("Saving your recording…").foregroundStyle(Theme.text2)
+                } else {
+                    Button { coordinator.showToolbar() } label: { Label("Open recorder", systemImage: "record.circle") }
+                        .buttonStyle(PrimaryButtonStyle()).keyboardShortcut("r", modifiers: [.command, .shift])
                 }
-            }.padding(.top, 4)
+            }
             if case .failed(let m) = model.state {
                 Label(m, systemImage: "exclamationmark.triangle.fill").font(.system(size: 12)).foregroundStyle(Theme.bad)
             }
             if let n = model.notice { Text(n).font(.system(size: 12)).foregroundStyle(Theme.text2) }
         }
-        .toggleStyle(.switch).tint(Theme.blue).controlSize(.small).font(.system(size: 12))
-        .disabled(!model.canStart && model.state != .recording)
         .padding(16).frame(maxWidth: .infinity, alignment: .leading)
         .background(Theme.bar, in: RoundedRectangle(cornerRadius: 12))
     }
@@ -163,6 +158,7 @@ struct HomeView: View {
             if model.screenPermission != .granted {
                 Text("After enabling Screen Recording in System Settings, quit and reopen the app. macOS applies it on the next launch.")
                     .font(.system(size: 11)).foregroundStyle(Theme.text3)
+                Button("Quit and reopen the app") { RecorderModel.relaunch() }.buttonStyle(QuietButtonStyle())
             }
             Text("Cursor tracking records position and clicks only, never what you type.").font(.system(size: 11)).foregroundStyle(Theme.text3)
         }

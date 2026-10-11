@@ -3,13 +3,24 @@ import CoreMedia
 import ScreenCaptureKit
 import ScreenRecCore
 
+enum CaptureTarget: Equatable {
+    case display(CGDirectDisplayID)
+    case window(CGWindowID)
+    /// Display plus a rect in display-local points (origin top-left).
+    case area(CGDirectDisplayID, CGRect)
+}
+
 struct CaptureOptions {
     var fps = 30
     var systemAudio = true
     var microphone = true
     var camera = false
-    /// Phase 0 fallback: the cursor engine (Phase 3) does not exist yet, so bake the OS cursor into the video.
-    var cursorInVideo = true
+    var cursorInVideo = false
+    var hideDesktopIcons = false
+    var micDeviceID: String?
+    var cameraDeviceID: String?
+    /// Chosen camera format size; nil = the device's current format.
+    var cameraDimensions: CMVideoDimensions?
 }
 
 struct CaptureResult {
@@ -68,7 +79,7 @@ enum CaptureError: LocalizedError {
     case writerSetup(String)
     var errorDescription: String? {
         switch self {
-        case .noDisplay: return "No capturable display was found."
+        case .noDisplay: return "The selected screen or window is no longer available."
         case .writerSetup(let m): return "Could not prepare recording files: \(m)"
         }
     }
@@ -90,31 +101,57 @@ final class CaptureSession: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
     private var info: CaptureInfo?
     var onError: (@Sendable (String) -> Void)?
 
-    init(projectURL: URL, options: CaptureOptions) {
+    private let target: CaptureTarget
+
+    init(projectURL: URL, options: CaptureOptions, target: CaptureTarget = .display(CGMainDisplayID())) {
         self.projectURL = projectURL
         self.options = options
+        self.target = target
         self.t0 = CMClockGetTime(CMClockGetHostTimeClock()).seconds
     }
 
     func start() async throws -> CaptureInfo {
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-        let mainID = CGMainDisplayID()
-        guard let display = content.displays.first(where: { $0.displayID == mainID }) ?? content.displays.first else {
-            throw CaptureError.noDisplay
+        // Never record this app's own windows (toolbar, overlays, preview).
+        var excluded = content.windows.filter { $0.owningApplication?.bundleIdentifier == Bundle.main.bundleIdentifier }
+        if options.hideDesktopIcons {
+            let iconLevel = Int(CGWindowLevelForKey(.desktopIconWindow))
+            excluded += content.windows.filter { $0.owningApplication?.bundleIdentifier == "com.apple.finder" && $0.windowLayer == iconLevel }
         }
-        let ownApps = content.applications.filter { $0.bundleIdentifier == Bundle.main.bundleIdentifier }
-        let filter = SCContentFilter(display: display, excludingApplications: ownApps, exceptingWindows: [])
+        var bakeCursor = options.cursorInVideo
+        let displayID: CGDirectDisplayID
+        var sourceRect: CGRect?
+        let filter: SCContentFilter
+        switch target {
+        case .display(let id), .area(let id, _):
+            displayID = id
+            guard let display = content.displays.first(where: { $0.displayID == id }) ?? content.displays.first else { throw CaptureError.noDisplay }
+            filter = SCContentFilter(display: display, excludingWindows: excluded)
+            if case .area(_, let r) = target { sourceRect = r }
+        case .window(let wid):
+            guard let win = content.windows.first(where: { $0.windowID == wid }) else { throw CaptureError.noDisplay }
+            // Windows can move while recording, so cursor metadata can't be aligned: bake the cursor in.
+            bakeCursor = true
+            filter = SCContentFilter(desktopIndependentWindow: win)
+            let centre = CGPoint(x: win.frame.midX, y: win.frame.midY)
+            displayID = content.displays.first(where: { $0.frame.contains(centre) })?.displayID ?? CGMainDisplayID()
+        }
+        guard let display = content.displays.first(where: { $0.displayID == displayID }) ?? content.displays.first else { throw CaptureError.noDisplay }
         let filterInfo = SCShareableContent.info(for: filter)
         let scale = CGFloat(filterInfo.pointPixelScale)
-        let width = Geometry.evenPixels(filterInfo.contentRect.width * scale)
-        let height = Geometry.evenPixels(filterInfo.contentRect.height * scale)
+        let pointSize = sourceRect?.size ?? filterInfo.contentRect.size
+        let width = Geometry.evenPixels(pointSize.width * scale)
+        let height = Geometry.evenPixels(pointSize.height * scale)
+        var region: NormRect?
+        if let r = sourceRect { region = AreaSelection(rect: r).normalized(in: CGRect(origin: .zero, size: display.frame.size)) }
 
         let config = SCStreamConfiguration()
         config.width = width
         config.height = height
         config.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(options.fps))
         config.pixelFormat = kCVPixelFormatType_32BGRA
-        config.showsCursor = options.cursorInVideo
+        config.showsCursor = bakeCursor
+        if let r = sourceRect { config.sourceRect = r }
         config.queueDepth = 6
         if options.systemAudio {
             config.capturesAudio = true
@@ -156,7 +193,7 @@ final class CaptureSession: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
         try await stream.startCapture()
 
         let captureInfo = CaptureInfo(displayFrame: display.frame, pixelWidth: width, pixelHeight: height,
-                                      scale: Double(scale), cursorBakedIntoVideo: options.cursorInVideo)
+                                      scale: Double(scale), cursorBakedIntoVideo: bakeCursor, region: region)
         info = captureInfo
         return captureInfo
     }
@@ -164,7 +201,7 @@ final class CaptureSession: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
     private func startDevices() throws {
         let session = AVCaptureSession()
         if let micWriter {
-            guard let device = AVCaptureDevice.default(for: .audio) else { throw CaptureError.writerSetup("no microphone available") }
+            guard let device = options.micDeviceID.flatMap({ AVCaptureDevice(uniqueID: $0) }) ?? AVCaptureDevice.default(for: .audio) else { throw CaptureError.writerSetup("no microphone available") }
             let input = try AVCaptureDeviceInput(device: device)
             guard session.canAddInput(input) else { throw CaptureError.writerSetup("cannot use microphone input") }
             session.addInput(input)
@@ -174,7 +211,11 @@ final class CaptureSession: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptur
             session.addOutput(output)
         }
         if options.camera {
-            guard let device = AVCaptureDevice.default(for: .video) else { throw CaptureError.writerSetup("no camera available") }
+            guard let device = options.cameraDeviceID.flatMap({ AVCaptureDevice(uniqueID: $0) }) ?? AVCaptureDevice.default(for: .video) else { throw CaptureError.writerSetup("no camera available") }
+            if let want = options.cameraDimensions,
+               let format = device.formats.first(where: { let d = CMVideoFormatDescriptionGetDimensions($0.formatDescription); return d.width == want.width && d.height == want.height }) {
+                try device.lockForConfiguration(); device.activeFormat = format; device.unlockForConfiguration()
+            }
             let input = try AVCaptureDeviceInput(device: device)
             guard session.canAddInput(input) else { throw CaptureError.writerSetup("cannot use camera input") }
             session.addInput(input)

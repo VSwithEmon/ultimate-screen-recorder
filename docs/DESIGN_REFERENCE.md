@@ -56,8 +56,12 @@ Source: 19 phone photos of a reference editor (not 26 as the PRD says), taken 20
 | 12 | Audio / transcription | 2657–2659 | — |
 | 13 | Export dialog | **none** (Export button only) | proposed by PRD, not observed |
 
-## Not photographed — must be designed from PRD text only
-Recording toolbar and its menus, area picker, floating camera preview, export dialog, Presets menu, Gradient/Color tabs, mask editing, empty/error/loading states.
+## Added 2026-10-11: recording-flow photos (second batch)
+Seen: floating toolbar (✕, Display/Window/Area/Device, camera, microphone with level meter, system audio, gear); camera menu (device list with default, Max camera resolution ▸, Hide camera preview, Don't record camera); microphone menu (devices, Reduce noise and normalize volume, Disable auto gain control, Don't record microphone); system-audio menu (all apps / selected apps / none); settings menu (Hide desktop icons in recorded video, Hide dock icon while recording, Highlight recorded area, Open quick share widget after recording, Show speaker notes ⌥⌘/, Recording countdown ▸, Advanced ▸, Settings…); display picker (name, resolution · FPS, Start recording ▾); area picker (Size W×H px, Position X Y px, `Any ▾`, `Saved ▾`, Start recording, "Drag area you want to record"); floating rounded camera preview.
+Implemented in v0.2.0: all of the above except: Device mode (disabled), selected-apps audio (disabled), auto-gain control (not exposed by macOS capture API), noise reduction (planned), quick-share widget (replaced by "open the editor after recording"), Settings… (not built).
+
+## Still not photographed — designed from PRD text only
+Export dialog, Presets menu, Gradient/Color tabs, mask editing, empty/error/loading states.
 
 ## Design observations to calibrate tokens
 Reference uses near-black panels, ~12 px radii on controls, indigo-to-violet accent (`≈#3B2FF0` filled buttons and zoom blocks, lavender slider thumbs). We keep the PRD's blue tokens (`#2563EB` primary) and keep the orange source clip.

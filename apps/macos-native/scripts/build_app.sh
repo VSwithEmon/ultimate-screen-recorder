@@ -2,6 +2,7 @@
 # Builds ScreenRec.app (release) from the SwiftPM package and ad-hoc signs it.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+VERSION="${VERSION:-0.2.0}"
 swift build -c release
 BIN="$(swift build -c release --show-bin-path)/ScreenRecApp"
 NAME="Ultimate Screen Recording"
@@ -18,12 +19,13 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleName</key><string>$NAME</string>
   <key>CFBundleDisplayName</key><string>$NAME</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>0.1.0</string>
+  <key>CFBundleShortVersionString</key><string>$VERSION</string>
   <key>CFBundleVersion</key><string>1</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSPrincipalClass</key><string>NSApplication</string>
   <key>NSMicrophoneUsageDescription</key><string>Ultimate Screen Recording records your microphone as a separate audio track in your local project.</string>
+  <key>NSCameraUseContinuityCameraDeviceType</key><true/>
   <key>NSCameraUsageDescription</key><string>Ultimate Screen Recording records your camera as a separate track in your local project.</string>
 </dict></plist>
 PLIST

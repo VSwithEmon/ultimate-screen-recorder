@@ -2,7 +2,7 @@
 # Packages build/Ultimate Screen Recording.app into site/downloads/UltimateScreenRecording-<version>-arm64.dmg
 set -euo pipefail
 cd "$(dirname "$0")/.."
-VERSION="${1:-0.1.0}"
+export VERSION="${1:-0.2.0}"
 ./scripts/build_app.sh
 APP="build/Ultimate Screen Recording.app"
 STAGE="$(mktemp -d)"

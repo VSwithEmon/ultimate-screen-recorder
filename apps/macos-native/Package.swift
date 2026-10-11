@@ -12,5 +12,6 @@ let package = Package(
         .target(name: "ScreenRecCore"),
         .executableTarget(name: "ScreenRecApp", dependencies: ["ScreenRecCore"]),
         .testTarget(name: "ScreenRecCoreTests", dependencies: ["ScreenRecCore"]),
+        .testTarget(name: "ScreenRecAppTests", dependencies: ["ScreenRecApp", "ScreenRecCore"]),
     ]
 )

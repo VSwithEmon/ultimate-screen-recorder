@@ -117,7 +117,12 @@ public final class EditorSession {
 
         if let rel = project.cursorEventsPath,
            let events = try? CursorEventLog.read(url: packageURL.appendingPathComponent(rel)) {
-            cursor = CursorTrack(events: events, timeShift: -origin)
+            // Area captures cover part of the display; re-express cursor positions relative to the recorded region.
+            var mapped = events
+            if let r = project.capture?.region, r.w > 0, r.h > 0 {
+                mapped = events.map { var e = $0; e.x = (e.x - r.x) / r.w; e.y = (e.y - r.y) / r.h; return e }
+            }
+            cursor = CursorTrack(events: mapped, timeShift: -origin)
         } else {
             cursor = .empty
         }

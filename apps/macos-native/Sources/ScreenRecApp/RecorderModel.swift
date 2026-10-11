@@ -2,6 +2,7 @@ import AppKit
 import AVFoundation
 import CoreGraphics
 import ScreenRecCore
+import ScreenCaptureKit
 import SwiftUI
 
 enum PermissionState: Equatable {
@@ -29,11 +30,6 @@ final class RecorderModel: ObservableObject {
     @Published var micPermission: PermissionState = .notDetermined
     @Published var cameraPermission: PermissionState = .notDetermined
 
-    @Published var recordSystemAudio = true
-    @Published var recordMicrophone = true
-    @Published var recordCamera = false
-    /// The cursor is recorded separately and rendered in the editor; baking it in disables cursor editing.
-    @Published var cursorInVideo = false
     var onFinished: ((URL) -> Void)?
 
     @Published var notice: String?
@@ -70,6 +66,16 @@ final class RecorderModel: ObservableObject {
         }
     }
 
+    /// Relaunches the app (macOS applies a new Screen Recording permission only to a fresh process).
+    static func relaunch() {
+        let path = Bundle.main.bundlePath
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/bin/sh")
+        p.arguments = ["-c", "sleep 1; /usr/bin/open -n \"\(path)\""]
+        try? p.run()
+        NSApp.terminate(nil)
+    }
+
     func requestScreenAccess() {
         // The prompt appears once; afterwards the user must enable the app in System Settings and relaunch it.
         _ = CGRequestScreenCaptureAccess()
@@ -103,19 +109,16 @@ final class RecorderModel: ObservableObject {
         }
     }
 
-    func start() async {
+    /// Starts recording `target`. `options` already reflect device choices and permissions.
+    func start(target: CaptureTarget, options: CaptureOptions) async {
         refreshPermissions()
-        guard screenPermission == .granted else {
-            state = .failed("Screen Recording permission is not granted. Grant it, then quit and reopen the app.")
-            return
-        }
-        if recordMicrophone && micPermission != .granted {
-            state = .failed("Microphone permission is not granted. Grant it or turn the microphone off.")
-            return
-        }
-        if recordCamera && cameraPermission != .granted {
-            state = .failed("Camera permission is not granted. Grant it or turn the camera off.")
-            return
+        if screenPermission != .granted {
+            // The pre-flight check can be stale; ask ScreenCaptureKit directly before giving up.
+            if (try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)) == nil {
+                state = .failed("Screen Recording is not allowed for this app yet. Open System Settings, switch \"Ultimate Screen Recording\" on, then quit and reopen the app.")
+                return
+            }
+            screenPermission = .granted
         }
         state = .starting
         notice = nil
@@ -125,8 +128,7 @@ final class RecorderModel: ObservableObject {
             self.project = project
             self.projectURL = url
 
-            let session = CaptureSession(projectURL: url, options: CaptureOptions(
-                fps: 30, systemAudio: recordSystemAudio, microphone: recordMicrophone, camera: recordCamera, cursorInVideo: cursorInVideo))
+            let session = CaptureSession(projectURL: url, options: options, target: target)
             session.onError = { [weak self] msg in Task { @MainActor in await self?.captureFailed(msg) } }
             let info = try await session.start()
             self.session = session

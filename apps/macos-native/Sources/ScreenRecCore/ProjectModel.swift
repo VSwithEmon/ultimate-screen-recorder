@@ -32,9 +32,11 @@ public struct CaptureInfo: Codable, Equatable {
     public var scale: Double
     /// True when the OS cursor is baked into the screen video (no separate cursor rendering possible).
     public var cursorBakedIntoVideo: Bool
-    public init(displayFrame: CGRect, pixelWidth: Int, pixelHeight: Int, scale: Double, cursorBakedIntoVideo: Bool) {
+    /// Part of the display the recording covers (area capture), 0...1. nil = whole display.
+    public var region: NormRect?
+    public init(displayFrame: CGRect, pixelWidth: Int, pixelHeight: Int, scale: Double, cursorBakedIntoVideo: Bool, region: NormRect? = nil) {
         self.displayFrame = displayFrame; self.pixelWidth = pixelWidth; self.pixelHeight = pixelHeight
-        self.scale = scale; self.cursorBakedIntoVideo = cursorBakedIntoVideo
+        self.scale = scale; self.cursorBakedIntoVideo = cursorBakedIntoVideo; self.region = region
     }
 }
 
